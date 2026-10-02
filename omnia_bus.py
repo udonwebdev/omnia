@@ -6,8 +6,10 @@ from pydantic import BaseModel
 import uvicorn
 from pathlib import Path
 from memory_engine import memory
+from telephony_gateway import telephony_router
 
 app = FastAPI(title="Omnia Event Bus")
+app.include_router(telephony_router)
 
 class ConnectionManager:
     def __init__(self):
