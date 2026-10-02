@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OMNIA HUD // CORE INTERFACE</title>
+    <style>
+        :root {
+            --bg-color: #050811;
+            --primary: #00f0ff;
+            --alert: #ff003c;
+            --warning: #ffb703;
+            --font-mono: 'Courier New', Courier, monospace;
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            background-color: var(--bg-color);
+            color: var(--primary);
+            font-family: var(--font-mono);
+            overflow: hidden;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            padding: 3rem;
+            text-transform: uppercase;
+        }
+        .header {
+            display: flex;
+            justify-content: space-between;
+            border-bottom: 2px solid var(--primary);
+            padding-bottom: 1rem;
+        }
+        .status-badge {
+            font-size: 1.2rem;
+            font-weight: bold;
+            padding: 0.2rem 1rem;
+            border: 1px solid var(--primary);
+        }
+        .center-display {
+            text-align: center;
+            align-self: center;
+        }
+        .hero-title {
+            font-size: 5rem;
+            letter-spacing: 0.5rem;
+            text-shadow: 0 0 20px var(--primary);
+            transition: all 0.3s ease;
+        }
+        .hero-subtext {
+            font-size: 1.5rem;
+            color: #8892b0;
+            margin-top: 1.5rem;
+        }
+        .telemetry-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 2rem;
+            border-top: 1px solid #1f293d;
+            padding-top: 1.5rem;
+            font-size: 0.9rem;
+        }
+        .telemetry-col { display: flex; flex-direction: column; gap: 0.5rem; }
+        /* Dynamic state themes */
+        body.state-locked {
+            --primary: var(--alert);
+        }
+        body.state-unlocked {
+            --primary: #00ff66;
+        }
+        body.state-dispatching {
+            --primary: var(--warning);
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <div class="status-badge" id="hud-connection">LINK: OFFLINE</div>
+        <div class="status-badge" id="hud-protocol">OMNIA OS V1.0-EXP</div>
+    </div>
+
+    <div class="center-display">
+        <h1 class="hero-title" id="hud-status">SYSTEM IDLE</h1>
+        <p class="hero-subtext" id="hud-detail">Awaiting input instruction...</p>
+    </div>
+
+    <div class="telemetry-grid">
+        <div class="telemetry-col">
+            <span>[BUS STATE] <span id="bus-state">DISCONNECTED</span></span>
+            <span>[ACTIVE NODES] <span id="node-count">0</span></span>
+        </div>
+        <div class="telemetry-col">
+            <span>[LAST EVENT] <span id="last-event">NONE</span></span>
+            <span>[THREAT LEVEL] <span>NOMINAL</span></span>
+        </div>
+        <div class="telemetry-col">
+            <span>[RUNTIME CAPABILITIES] <span>SHELL | ADB | WS</span></span>
+            <span>[ORCHESTRATOR] <span>ANTIGRAVITY</span></span>
+        </div>
+    </div>
+
+    <script>
+        const ws = new WebSocket("ws://" + window.location.host + "/ws/hud");
+        const statusEl = document.getElementById("hud-status");
+        const detailEl = document.getElementById("hud-detail");
+        const linkEl = document.getElementById("hud-connection");
+        const nodeEl = document.getElementById("node-count");
+        const lastEventEl = document.getElementById("last-event");
+
+        ws.onopen = () => {
+            linkEl.innerText = "LINK: ONLINE";
+            linkEl.style.color = "#00ff66";
+            document.getElementById("bus-state").innerText = "CONNECTED";
+        };
+
+        ws.onmessage = (event) => {
+            const data = JSON.parse(event.data);
+            if (data.type === "STATE_CHANGE") {
+                statusEl.innerText = data.state;
+                detailEl.innerText = data.message || "";
+                document.body.className = "state-" + data.state.toLowerCase();
+                lastEventEl.innerText = data.state;
+            } else if (data.type === "TELEMETRY") {
+                if (data.active_nodes !== undefined) nodeEl.innerText = data.active_nodes;
+            }
+        };
+
+        ws.onclose = () => {
+            linkEl.innerText = "LINK: LOST";
+            linkEl.style.color = "var(--alert)";
+        };
+    </script>
+</body>
+</html>
