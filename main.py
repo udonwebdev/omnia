@@ -9,6 +9,8 @@ from omnia_bus import app as bus_app
 from omnia_tools import OMNIA_ALL_TOOLS
 from wake_listener import WakeWordListener
 from voice_pipeline import voice_pipeline
+from mesh_discovery import mesh_registry
+
 
 SYSTEM_DIRECTIVE = """
 You are Omnia: an autonomous task orchestrator and device intelligence.
@@ -62,11 +64,10 @@ async def main():
     print("=" * 60)
 
     async with Agent(agent_config) as omnia_agent:
-        # Launch the event bus, the voice pipeline, and the CLI interface concurrently
+        # Launch the event bus, voice pipeline, and mesh discovery daemon concurrently
         bus_task = asyncio.create_task(run_bus_server())
-        
-        # Non-blocking voice ear
         voice_task = asyncio.create_task(run_voice_interface(omnia_agent))
+        mesh_task = asyncio.create_task(mesh_registry.start())
 
         print("[READY] All subsystems operational. Enter command below or speak wake-word.")
         
@@ -87,6 +88,8 @@ async def main():
         finally:
             bus_task.cancel()
             voice_task.cancel()
+            mesh_registry.stop()
+            mesh_task.cancel()
 
 if __name__ == "__main__":
     asyncio.run(main())

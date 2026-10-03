@@ -53,7 +53,21 @@ class DeviceController:
         ]
         
         results = await asyncio.gather(*tasks)
-        return {dev.get_serial_no(): res for dev, res in zip(self.devices, results)}
+        local_results = {dev.get_serial_no(): res for dev, res in zip(self.devices, results)}
+
+        # Distributed network peer dispatch if available
+        try:
+            from mesh_discovery import mesh_registry
+            from mesh_replicator import mesh_replicator
+            if mesh_registry.get_active_nodes():
+                remote_results = await mesh_replicator.broadcast_mesh_command(
+                    "/api/device/shell", {"command": command}
+                )
+                local_results.update({"remote_nodes": remote_results})
+        except Exception:
+            pass
+
+        return local_results
 
     async def wake_and_unlock_mesh(self) -> Dict[str, str]:
         """Concurrently turns screen on and swipes to dismiss lock screen on all nodes."""

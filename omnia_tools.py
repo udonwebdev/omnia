@@ -115,6 +115,32 @@ def stop_speech_playback() -> str:
     return "Speech output aborted."
 
 # Complete Tool Registry
+from mesh_discovery import mesh_registry
+from mesh_replicator import mesh_replicator
+
+@tool
+def list_mesh_nodes() -> str:
+    """Returns a list of all auto-discovered peer nodes and ADB host machines on the local mesh network."""
+    nodes = mesh_registry.get_active_nodes()
+    if not nodes:
+        return "No external mesh nodes discovered. Local node running in standalone mode."
+    
+    report = [f"Discovered {len(nodes)} active mesh peer(s):"]
+    for nid, details in nodes.items():
+        report.append(f"- ID: {nid} | IP: {details['ip']}:{details['port']} | Role: {details['role']}")
+    return "\n".join(report)
+
+@tool
+async def broadcast_to_all_mesh_hosts(state: str, details: str = "") -> str:
+    """Propagates a state change or UI update to all discovered nodes on the local network.
+    
+    Args:
+        state: Target status identifier ('SYSTEM_IDLE', 'ALERT', 'DISPATCHING').
+        details: Accompanying context or notification string.
+    """
+    delivered = await mesh_replicator.broadcast_state(state, details)
+    return f"State '{state}' replicated across {len(delivered)} mesh node(s): {delivered}"
+
 OMNIA_ALL_TOOLS = [
     unlock_all_devices,
     play_youtube_video,
@@ -128,6 +154,8 @@ OMNIA_ALL_TOOLS = [
     execute_web_task,
     speak_phrase,
     stop_speech_playback,
+    list_mesh_nodes,
+    broadcast_to_all_mesh_hosts,
 ]
 
 # Backward compatibility alias
@@ -135,3 +163,4 @@ OMNIA_HARDWARE_TOOLS = OMNIA_ALL_TOOLS
 
 if __name__ == "__main__":
     print(f"Omnia Tools registered successfully: {[t.__name__ for t in OMNIA_ALL_TOOLS]}")
+
