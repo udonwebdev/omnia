@@ -91,6 +91,29 @@ async def execute_web_task(target_url: str, objective: str) -> str:
     result = await browser_agent.run_task(target_url=target_url, instruction=objective)
     return f"Web task finished: {result}"
 
+# --- Speech Synthesis & Audio Responder Tools ---
+from audio_synthesizer import audio_synth
+from audio_playback import audio_player
+
+@tool
+async def speak_phrase(text: str) -> str:
+    """Synthesizes and speaks a response out loud across the workstation audio system.
+    
+    Args:
+        text: Natural language sentence to speak to the user.
+    """
+    await update_hud_state("SPEAKING", text[:60])
+    raw_audio = await audio_synth.synthesize_to_bytes(text)
+    await audio_player.play_audio_bytes(raw_audio)
+    await update_hud_state("SYSTEM_IDLE", "Standing by.")
+    return f"Spoke phrase: '{text}'"
+
+@tool
+def stop_speech_playback() -> str:
+    """Immediately stops and clears any active audio speech or media on the host."""
+    audio_player.interrupt()
+    return "Speech output aborted."
+
 # Complete Tool Registry
 OMNIA_ALL_TOOLS = [
     unlock_all_devices,
@@ -102,7 +125,9 @@ OMNIA_ALL_TOOLS = [
     launch_hud_interface,
     search_recent_web_context,
     open_url_in_browser,
-    execute_web_task
+    execute_web_task,
+    speak_phrase,
+    stop_speech_playback,
 ]
 
 # Backward compatibility alias

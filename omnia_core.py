@@ -17,6 +17,34 @@ Your purpose:
 4. Execute terminal and system operations autonomously within safe governance boundaries.
 """
 
+import re
+from audio_synthesizer import audio_synth
+from audio_playback import audio_player
+
+async def speak_streamed_chunks(response_stream):
+    """Accumulates text chunks into sentences and pipes them immediately into audio synthesis."""
+    sentence_buffer = ""
+    sentence_delimiters = re.compile(r"([.!?]+(\s+|$))")
+
+    async for chunk in response_stream:
+        sys.stdout.write(chunk)
+        sys.stdout.flush()
+        sentence_buffer += chunk
+
+        match = sentence_delimiters.search(sentence_buffer)
+        if match:
+            split_idx = match.end()
+            sentence = sentence_buffer[:split_idx].strip()
+            sentence_buffer = sentence_buffer[split_idx:]
+            
+            if sentence:
+                raw_audio = await audio_synth.synthesize_to_bytes(sentence)
+                asyncio.create_task(audio_player.play_audio_bytes(raw_audio))
+
+    if sentence_buffer.strip():
+        raw_audio = await audio_synth.synthesize_to_bytes(sentence_buffer.strip())
+        await audio_player.play_audio_bytes(raw_audio)
+
 async def start_voice_runtime(agent_instance):
     """Starts always-on wake listener and auto-dispatches instructions to Antigravity agent."""
     listener = WakeWordListener()
@@ -29,9 +57,7 @@ async def start_voice_runtime(agent_instance):
         if command_text:
             print(f"\n[Voice Instruction Received]: {command_text}")
             response = await agent_instance.chat(command_text)
-            async for token in response:
-                sys.stdout.write(token)
-                sys.stdout.flush()
+            await speak_streamed_chunks(response)
             print()
 
     await listener.listen_loop(handle_wake)
