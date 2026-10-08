@@ -252,6 +252,42 @@ EVENT_SCHEMAS: Dict[str, Dict[str, Any]] = {
     },
     "split_brain.detected": {
         "required_fields": ["competing_leaders", "epoch"]
+    },
+    "replication.started": {
+        "required_fields": ["node_id", "peer_node"]
+    },
+    "replication.delta_received": {
+        "required_fields": ["delta_id", "namespace_id", "entity_id", "revision"]
+    },
+    "replication.delta_applied": {
+        "required_fields": ["delta_id", "namespace_id", "entity_id", "revision"]
+    },
+    "replication.delta_rejected": {
+        "required_fields": ["delta_id", "namespace_id", "reason"]
+    },
+    "replication.snapshot_started": {
+        "required_fields": ["snapshot_id", "namespace_id", "source_node"]
+    },
+    "replication.snapshot_applied": {
+        "required_fields": ["snapshot_id", "namespace_id", "record_count"]
+    },
+    "replication.sync_completed": {
+        "required_fields": ["peer_node", "namespace_id", "revision"]
+    },
+    "replication.sync_failed": {
+        "required_fields": ["peer_node", "namespace_id", "reason"]
+    },
+    "replication.peer_lagging": {
+        "required_fields": ["peer_node", "lag_revisions"]
+    },
+    "replication.conflict_detected": {
+        "required_fields": ["conflict_id", "namespace_id", "entity_id"]
+    },
+    "replication.reconciliation_completed": {
+        "required_fields": ["namespace_id", "status"]
+    },
+    "replication.state_diverged": {
+        "required_fields": ["namespace_id", "local_hash", "remote_hash"]
     }
 }
 

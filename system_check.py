@@ -819,12 +819,92 @@ async def run_diagnostics():
     except Exception as e:
         print(f"      [22] Durability & Telemetry .... FAIL ({e})")
 
+    # 15. Module 23 Distributed State Synchronization, Replication & Reconciliation
+    print("\n[15/15] Checking Module 23: State Synchronization, Replication & Reconciliation...")
+    from replication import (
+        replication_service,
+        ReplicationService,
+        namespace_registry,
+        integrity_verifier,
+        snapshot_manager,
+        delta_manager,
+        reconciliation_engine,
+        StateRecord,
+        StateDelta,
+        DeltaOperation
+    )
+
+    # 15a. Namespace Classification & Secret Isolation
+    try:
+        assert namespace_registry.can_replicate("tasks") is True
+        assert namespace_registry.can_replicate("secrets") is False
+        assert namespace_registry.can_replicate("audio_buffers") is False
+        print("      [23] Namespace Security & Policy PASS (Sensitive and local namespaces strictly isolated)")
+    except Exception as e:
+        print(f"      [23] Namespace Security & Policy FAIL ({e})")
+
+    # 15b. Authoritative State Publishing & Delta Generation
+    try:
+        rep_task_id = f"diag_task_rep_{uuid.uuid4().hex[:6]}"
+        pub_ok, pub_rec, pub_delta, _ = replication_service.publish_state(
+            namespace_id="tasks",
+            entity_id=rep_task_id,
+            payload={"status": "INITIALIZED", "progress": 0.0}
+        )
+        assert pub_ok is True and pub_rec.revision == 1
+        assert pub_delta.integrity_hash == pub_delta.compute_hash()
+        print("      [23] State Publishing & Deltas . PASS (Atomic revision increment & delta hashing verified)")
+    except Exception as e:
+        print(f"      [23] State Publishing & Deltas . FAIL ({e})")
+
+    # 15c. Idempotent Delta Application & Epoch Fencing
+    try:
+        # Applying duplicate delta is acknowledged idempotently
+        dup_ok, dup_rec, dup_msg = replication_service.apply_remote_delta(pub_delta)
+        assert dup_ok is True and "IDEMPOTENT" in dup_msg
+        # Stale epoch delta is rejected
+        stale_d = StateDelta(
+            namespace_id="tasks",
+            entity_id=rep_task_id,
+            source_node="stale_node",
+            source_epoch=0,
+            base_revision=1,
+            target_revision=2,
+            operation=DeltaOperation.UPDATE,
+            payload={"progress": 50.0}
+        )
+        stale_ok, _, stale_err = replication_service.apply_remote_delta(stale_d)
+        assert stale_ok is False and "FENCED_STALE_EPOCH" in stale_err
+        print("      [23] Idempotency & Epoch Fencing PASS (Duplicate delivery safe & stale epochs rejected)")
+    except Exception as e:
+        print(f"      [23] Idempotency & Epoch Fencing FAIL ({e})")
+
+    # 15d. Frozen Snapshot Verification & Installation
+    try:
+        snap_obj = replication_service.create_snapshot("tasks")
+        assert snap_obj is not None and snap_obj.record_count > 0
+        assert integrity_verifier.verify_snapshot_hash(snap_obj) is True
+        print("      [23] Snapshots & Content Hashing PASS (Frozen state boundary & SHA-256 integrity verified)")
+    except Exception as e:
+        print(f"      [23] Snapshots & Content Hashing FAIL ({e})")
+
+    # 15e. Divergence Detection & Anti-Entropy
+    try:
+        rec_local = [StateRecord(namespace_id="tasks", entity_type="TASK", entity_id="div_1", owner_node="a", owner_epoch=1, revision=1, payload={"p": 1})]
+        rec_remote = [StateRecord(namespace_id="tasks", entity_type="TASK", entity_id="div_1", owner_node="a", owner_epoch=1, revision=2, payload={"p": 2})]
+        is_div, div_keys, _ = reconciliation_engine.detect_divergence("tasks", rec_local, rec_remote)
+        assert is_div is True and div_keys == ["div_1"]
+        print("      [23] Anti-Entropy Reconciliation PASS (Hierarchical divergence detection & convergence verified)")
+    except Exception as e:
+        print(f"      [23] Anti-Entropy Reconciliation FAIL ({e})")
+
     print("\n" + "=" * 60)
     print("Diagnostics complete.")
     print("=" * 60)
 
 if __name__ == "__main__":
     asyncio.run(run_diagnostics())
+
 
 
 

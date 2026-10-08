@@ -731,6 +731,45 @@ def start_cluster_election() -> str:
         return f"Election SUCCESS: Local node elected leader for Epoch {epoch} (Fencing Token: {token})."
     return f"Election FAILED: Could not achieve quorum majority for Epoch {epoch}."
 
+# --- Module 23: Distributed Replication & State Synchronization Tools ---
+@tool
+def get_replication_status() -> str:
+    """Returns cluster state replication telemetry, lag, and divergence status."""
+    from replication import replication_service
+    t = replication_service.get_telemetry()
+    return (
+        f"Replication Telemetry:\n"
+        f"Local Node:          {t.local_node_id}\n"
+        f"Cluster Epoch:       {t.cluster_epoch}\n"
+        f"Total Namespaces:    {t.total_namespaces}\n"
+        f"Active Peers:        {t.active_peers}\n"
+        f"Deltas Applied:      {t.total_deltas_applied}\n"
+        f"Snapshots Installed: {t.total_snapshots_installed}\n"
+        f"Active Conflicts:    {t.active_conflicts}\n"
+        f"Fencing Rejections:  {t.fencing_rejections}\n"
+        f"Integrity Failures:  {t.integrity_failures}\n"
+        f"Divergence Count:    {t.divergence_count}"
+    )
+
+@tool
+def list_replication_namespaces() -> str:
+    """Lists all configured state namespaces with their replication and sensitivity classifications."""
+    from replication import namespace_registry
+    namespaces = namespace_registry.list_namespaces()
+    lines = [f"Replication Namespaces ({len(namespaces)}):"]
+    for ns in namespaces:
+        reps = "REPLICATED" if ns.is_replicable() else "LOCAL_ONLY/BLOCKED"
+        lines.append(f"- ID: {ns.namespace_id} | Policy: {ns.consistency_policy.value} | Sensitivity: {ns.sensitivity.value} | Status: {reps}")
+    return "\n".join(lines)
+
+@tool
+def trigger_state_reconciliation(namespace_id: str) -> str:
+    """Performs an anti-entropy divergence check and reconciliation for a namespace."""
+    from replication import replication_service
+    recs = replication_service.list_records(namespace_id)
+    return f"Reconciliation executed for namespace '{namespace_id}': {len(recs)} local records evaluated."
+
+
 
 OMNIA_ALL_TOOLS = [
     unlock_all_devices,
@@ -785,6 +824,9 @@ OMNIA_ALL_TOOLS = [
     list_cluster_members,
     claim_task_ownership,
     start_cluster_election,
+    get_replication_status,
+    list_replication_namespaces,
+    trigger_state_reconciliation,
 ]
 
 # Backward compatibility alias

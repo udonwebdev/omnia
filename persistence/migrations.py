@@ -7,7 +7,7 @@ from typing import List, Tuple
 
 logger = logging.getLogger("Omnia.Persistence.Migrations")
 
-CURRENT_SCHEMA_VERSION = 4
+CURRENT_SCHEMA_VERSION = 5
 
 MIGRATION_V1 = """
 -- Schema Version 1: Durable Task Graph & Crash Recovery Tables
@@ -364,6 +364,106 @@ CREATE TABLE IF NOT EXISTS distributed_locks (
 CREATE INDEX IF NOT EXISTS idx_dist_locks_resource ON distributed_locks(resource_id);
 """
 
+MIGRATION_V5 = """
+-- Schema Version 5: Distributed State Synchronization, Replication & Reconciliation Tables
+
+CREATE TABLE IF NOT EXISTS replication_namespaces (
+    namespace_id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    owner_type TEXT NOT NULL,
+    replication_policy TEXT NOT NULL,
+    consistency_policy TEXT NOT NULL,
+    sensitivity TEXT NOT NULL,
+    schema_version TEXT NOT NULL,
+    enabled INTEGER DEFAULT 1,
+    created_at REAL NOT NULL,
+    metadata_json TEXT DEFAULT '{}'
+);
+
+CREATE TABLE IF NOT EXISTS replication_state_records (
+    state_id TEXT PRIMARY KEY,
+    namespace_id TEXT NOT NULL,
+    entity_type TEXT NOT NULL,
+    entity_id TEXT NOT NULL,
+    owner_node TEXT NOT NULL,
+    owner_epoch INTEGER NOT NULL,
+    revision INTEGER NOT NULL,
+    payload_json TEXT NOT NULL,
+    schema_version TEXT NOT NULL,
+    created_at REAL NOT NULL,
+    updated_at REAL NOT NULL,
+    integrity_hash TEXT NOT NULL,
+    FOREIGN KEY (namespace_id) REFERENCES replication_namespaces(namespace_id) ON DELETE CASCADE
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_repl_state_entity ON replication_state_records(namespace_id, entity_type, entity_id);
+CREATE INDEX IF NOT EXISTS idx_repl_state_rev ON replication_state_records(namespace_id, revision);
+CREATE INDEX IF NOT EXISTS idx_repl_state_owner ON replication_state_records(owner_node, owner_epoch);
+
+CREATE TABLE IF NOT EXISTS replication_deltas (
+    delta_id TEXT PRIMARY KEY,
+    namespace_id TEXT NOT NULL,
+    entity_id TEXT NOT NULL,
+    source_node TEXT NOT NULL,
+    source_epoch INTEGER NOT NULL,
+    base_revision INTEGER NOT NULL,
+    target_revision INTEGER NOT NULL,
+    operation TEXT NOT NULL,
+    payload_json TEXT NOT NULL,
+    causal_metadata_json TEXT DEFAULT '{}',
+    integrity_hash TEXT NOT NULL,
+    created_at REAL NOT NULL,
+    applied_at REAL,
+    FOREIGN KEY (namespace_id) REFERENCES replication_namespaces(namespace_id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_repl_delta_ns_rev ON replication_deltas(namespace_id, target_revision);
+CREATE INDEX IF NOT EXISTS idx_repl_delta_entity ON replication_deltas(namespace_id, entity_id);
+
+CREATE TABLE IF NOT EXISTS replication_snapshots (
+    snapshot_id TEXT PRIMARY KEY,
+    namespace_id TEXT NOT NULL,
+    source_node TEXT NOT NULL,
+    source_epoch INTEGER NOT NULL,
+    revision INTEGER NOT NULL,
+    created_at REAL NOT NULL,
+    schema_version TEXT NOT NULL,
+    record_count INTEGER NOT NULL,
+    content_hash TEXT NOT NULL,
+    records_json TEXT NOT NULL,
+    FOREIGN KEY (namespace_id) REFERENCES replication_namespaces(namespace_id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_repl_snap_ns_rev ON replication_snapshots(namespace_id, revision);
+
+CREATE TABLE IF NOT EXISTS replication_sync_cursors (
+    peer_node TEXT NOT NULL,
+    namespace_id TEXT NOT NULL,
+    last_applied_revision INTEGER DEFAULT 0,
+    last_acknowledged_revision INTEGER DEFAULT 0,
+    last_verified_revision INTEGER DEFAULT 0,
+    last_sync_time REAL NOT NULL,
+    status TEXT NOT NULL,
+    PRIMARY KEY (peer_node, namespace_id)
+);
+
+CREATE TABLE IF NOT EXISTS replication_conflicts (
+    conflict_id TEXT PRIMARY KEY,
+    namespace_id TEXT NOT NULL,
+    entity_id TEXT NOT NULL,
+    local_version_json TEXT NOT NULL,
+    remote_version_json TEXT NOT NULL,
+    conflict_type TEXT NOT NULL,
+    resolution_strategy TEXT NOT NULL,
+    resolution_status TEXT NOT NULL,
+    created_at REAL NOT NULL,
+    resolved_at REAL,
+    evidence_json TEXT DEFAULT '{}'
+);
+
+CREATE INDEX IF NOT EXISTS idx_repl_conflicts_status ON replication_conflicts(resolution_status);
+"""
+
 def backup_database(db_path: str, backup_dir: str = "persistence_backups") -> str:
     """Creates a timestamped snapshot of the SQLite database prior to any schema modification."""
     if not os.path.exists(db_path):
@@ -441,6 +541,17 @@ def apply_migrations(db_path: str) -> int:
             conn.commit()
             logger.info("Migration v4 applied successfully.")
             current_version = 4
+
+        if current_version < 5:
+            logger.info("Applying Migration v5 (Distributed State Synchronization & Replication Tables)...")
+            cursor.executescript(MIGRATION_V5)
+            cursor.execute(
+                "INSERT INTO schema_migrations (version, applied_at, description) VALUES (?, ?, ?)",
+                (5, time.time(), "Distributed State Synchronization, Replication and Reconciliation tables")
+            )
+            conn.commit()
+            logger.info("Migration v5 applied successfully.")
+            current_version = 5
 
         return current_version
     except Exception as e:
