@@ -252,10 +252,65 @@ async def run_diagnostics():
     except Exception as e:
         print(f"      [15] Security & Redaction ...... FAIL ({e})")
 
+    # ---------------------------------------------------------
+    # 8. MODULE 16: INTENT COMPILER & TASK PLANNER
+    # ---------------------------------------------------------
+    print("\n[8/8] Checking Module 16: Intent Compiler & Task Planner...")
+    from intent.compiler import intent_compiler
+    from intent.parser import intent_parser
+    from intent.capability_mapper import capability_mapper
+    from intent.validator import plan_validator
+    from intent.models import ValidationStatus
+
+    # 8a. Capability Registry Discovery
+    try:
+        caps = capability_mapper.list_capabilities()
+        assert len(caps) >= 8
+        print(f"      [16] Capability Discovery ...... PASS ({len(caps)} tools indexed)")
+    except Exception as e:
+        print(f"      [16] Capability Discovery ...... FAIL ({e})")
+
+    # 8b. Intent Parsing & Entity Extraction
+    try:
+        user_goal = "Open https://example.com in Chrome"
+        parsed = intent_parser.parse(user_goal)
+        assert any("example.com" in u for u in parsed.entities.get("urls", []))
+        assert parsed.primary_objective == "BROWSER_NAVIGATE"
+        print("      [16] Intent Parser ............. PASS (Extracted entities & normalized objective)")
+    except Exception as e:
+        print(f"      [16] Intent Parser ............. FAIL ({e})")
+
+    # 8c. Ambiguity Detection & Safety Evaluation
+    try:
+        amb_intent = intent_parser.parse("Delete those files")
+        assert amb_intent.requires_confirmation is True
+        print(f"      [16] Ambiguity & Risk Engine ... PASS (Detected state: {amb_intent.ambiguity.state.value})")
+    except Exception as e:
+        print(f"      [16] Ambiguity & Risk Engine ... FAIL ({e})")
+
+    # 8d. Plan Compilation & TaskGraph Synthesis
+    try:
+        tg, plan = await intent_compiler.compile_intent("Navigate to https://example.com")
+        assert tg is not None
+        assert plan.validation.status == ValidationStatus.VALID
+        assert len(tg.nodes) >= 1
+        print(f"      [16] Plan Compiler ............. PASS (Compiled {len(tg.nodes)} graph nodes, score: {plan.score.overall:.2f})")
+    except Exception as e:
+        print(f"      [16] Plan Compiler ............. FAIL ({e})")
+
+    # 8e. Plan Explanation Generation
+    try:
+        explanation = intent_compiler.explain_plan(plan)
+        assert "Execution Plan" in explanation
+        print("      [16] Plan Explainer ............ PASS (Structured rationale generated)")
+    except Exception as e:
+        print(f"      [16] Plan Explainer ............ FAIL ({e})")
+
     print("\n" + "=" * 60)
     print("Diagnostics complete.")
     print("=" * 60)
 
 if __name__ == "__main__":
     asyncio.run(run_diagnostics())
+
 

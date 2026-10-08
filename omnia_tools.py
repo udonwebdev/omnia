@@ -345,6 +345,32 @@ def get_task_checkpoint_summary(task_id: str) -> str:
         f"Variables: {list(chk.variables.keys())}"
     )
 
+@tool
+async def compile_user_intent_plan(natural_language_goal: str) -> str:
+    """Compiles a user's natural language goal into a validated, executable TaskGraph.
+    
+    Args:
+        natural_language_goal: High-level user command or mission.
+    """
+    from intent import intent_compiler
+    tg, plan = await intent_compiler.compile_intent(natural_language_goal)
+    if not tg:
+        return f"[PLAN REJECTED / NEEDS CLARIFICATION] Status: {plan.validation.status.value}\nErrors: {plan.validation.errors}"
+    return f"Plan compiled successfully with {len(plan.steps)} steps. Plan ID: {plan.plan_id}. Safety: {plan.validation.status.value}"
+
+@tool
+def explain_execution_plan(plan_id: str) -> str:
+    """Returns a transparent, human-readable summary of the compiled execution plan.
+    
+    Args:
+        plan_id: Identifier of the compiled plan.
+    """
+    from intent import intent_compiler
+    history = intent_compiler.plan_history.get(plan_id)
+    if not history:
+        return f"Plan ID '{plan_id}' not found."
+    return intent_compiler.explain_plan(history[-1])
+
 OMNIA_ALL_TOOLS = [
     unlock_all_devices,
     play_youtube_video,
@@ -372,6 +398,8 @@ OMNIA_ALL_TOOLS = [
     list_active_orchestration_tasks,
     scan_and_list_interrupted_tasks,
     get_task_checkpoint_summary,
+    compile_user_intent_plan,
+    explain_execution_plan,
 ]
 
 # Backward compatibility alias

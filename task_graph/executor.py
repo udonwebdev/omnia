@@ -205,6 +205,16 @@ class TaskExecutionEngine:
                 graph.log_event("TASK_COMPLETED", {"progress": 100.0})
                 persistence_store.append_event(graph.task_id, "TASK_COMPLETED", {"progress": 100.0})
                 await self._notify_hud("TASK_COMPLETED", f"Task {graph.task_id[:6]} finished successfully.")
+                checkpoint_manager.create_checkpoint(
+                    task_id=graph.task_id,
+                    node_id=graph.current_node_id,
+                    task_state=graph.state.value,
+                    node_states={nid: n.state.value for nid, n in graph.nodes.items()},
+                    variables=context.variables,
+                    resource_state=context.resource_locks,
+                    last_verified_observations=[],
+                    policy_trigger=CheckpointPolicy.CHECKPOINT_TASK_COMPLETE
+                )
 
             # Final Task Record Update
             task_rec = persistence_store.load_task(graph.task_id)
