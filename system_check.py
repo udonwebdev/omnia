@@ -306,6 +306,55 @@ async def run_diagnostics():
     except Exception as e:
         print(f"      [16] Plan Explainer ............ FAIL ({e})")
 
+    # ---------------------------------------------------------
+    # 9. MODULE 17: CAPABILITY REGISTRY & DYNAMIC SKILL SYSTEM
+    # ---------------------------------------------------------
+    print("\n[9/9] Checking Module 17: Capability Registry & Dynamic Skill System...")
+    from capabilities.registry import capability_registry
+    from capabilities.matcher import capability_matcher
+    from capabilities.models import CapabilityCategory, CapabilityHealth, CapabilityMatchQuery
+    from capabilities.skill_loader import skill_loader
+
+    # 9a. Registry Inventory & Category Enumeration
+    try:
+        all_caps = capability_registry.list_capabilities()
+        assert len(all_caps) >= 10
+        print(f"      [17] Authoritative Registry .... PASS ({len(all_caps)} built-in capabilities indexed)")
+    except Exception as e:
+        print(f"      [17] Authoritative Registry .... FAIL ({e})")
+
+    # 9b. Provider Resolution & Fallback Ranking
+    try:
+        cap, prov, expl = capability_matcher.resolve_best_capability_and_provider("browser.navigate")
+        assert cap is not None and prov is not None
+        print(f"      [17] Provider Resolver ......... PASS (Selected provider: {prov.provider_id})")
+    except Exception as e:
+        print(f"      [17] Provider Resolver ......... FAIL ({e})")
+
+    # 9c. Dependency Graph & Degradation Ripple
+    try:
+        deps = capability_registry.get_dependencies("browser.execute_task")
+        assert "browser.navigate" in deps
+        print("      [17] Dependency Graph .......... PASS (Verified capability dependency tree)")
+    except Exception as e:
+        print(f"      [17] Dependency Graph .......... FAIL ({e})")
+
+    # 9d. Dynamic Skill Manifest Validation & Loading
+    try:
+        manifest = {
+            "id": "system.diagnostic_ping",
+            "name": "Diagnostic System Ping",
+            "version": "1.0.0",
+            "category": "SYSTEM",
+            "risk_level": "READ_ONLY",
+            "description": "Verifies runtime responsiveness"
+        }
+        loaded, msg = skill_loader.load_skill_from_manifest(manifest)
+        assert loaded is True
+        print("      [17] Dynamic Skill Loader ...... PASS (Manifest validated & capability registered)")
+    except Exception as e:
+        print(f"      [17] Dynamic Skill Loader ...... FAIL ({e})")
+
     print("\n" + "=" * 60)
     print("Diagnostics complete.")
     print("=" * 60)

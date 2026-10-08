@@ -170,6 +170,19 @@ class TaskExecutionEngine:
                     persistence_store.append_event(graph.task_id, "LOOP_DETECTED", {"node_id": node.node_id})
                     break
 
+                # 3b. Module 17: Pre-Execution Capability Health & Permission Check
+                cap_name = node.metadata.get("capability")
+                if cap_name:
+                    from capabilities.registry import capability_registry
+                    from capabilities.models import CapabilityHealth
+                    cap_meta = capability_registry.get_capability(cap_name)
+                    if cap_meta and cap_meta.health in [CapabilityHealth.UNAVAILABLE, CapabilityHealth.FAILED, CapabilityHealth.BLOCKED, CapabilityHealth.DISABLED]:
+                        logger.error(f"CAPABILITY_BLOCKED: Node '{node.name}' relies on {cap_name} which is {cap_meta.health.value}.")
+                        graph.state = TaskState.FAILED
+                        graph.log_event("CAPABILITY_BLOCKED", {"node_id": node.node_id, "capability": cap_name, "health": cap_meta.health.value})
+                        persistence_store.append_event(graph.task_id, "CAPABILITY_BLOCKED", {"node_id": node.node_id, "capability": cap_name})
+                        break
+
                 # 4. Acquire Resource Locks
                 acquired = await resource_manager.acquire_locks(graph.task_id, node.required_resources, timeout_sec=5.0)
                 if not acquired:

@@ -371,6 +371,62 @@ def explain_execution_plan(plan_id: str) -> str:
         return f"Plan ID '{plan_id}' not found."
     return intent_compiler.explain_plan(history[-1])
 
+@tool
+def query_capability_registry(category: str = "") -> str:
+    """Queries the authoritative Omnia Capability Registry for available capabilities.
+    
+    Args:
+        category: Optional category filter (e.g. 'BROWSER', 'VISION', 'DEVICE', 'VOICE', 'SYSTEM').
+    """
+    from capabilities.registry import capability_registry
+    from capabilities.models import CapabilityCategory
+    cat = None
+    if category:
+        try:
+            cat = CapabilityCategory[category.upper()]
+        except KeyError:
+            pass
+    caps = capability_registry.list_capabilities(category=cat)
+    lines = [f"Found {len(caps)} capability(ies):"]
+    for c in caps:
+        lines.append(f"- [{c.id}] v{c.version} ({c.health.value}) - {c.description[:60]}")
+    return "\n".join(lines)
+
+@tool
+async def check_capability_health(capability_id: str = "") -> str:
+    """Executes on-demand health probes across Omnia capabilities or checks a specific capability.
+    
+    Args:
+        capability_id: Optional ID of a specific capability to probe.
+    """
+    from capabilities.health import capability_health_checker
+    from capabilities.registry import capability_registry
+    if capability_id:
+        cap = capability_registry.get_capability(capability_id)
+        if not cap:
+            return f"Capability '{capability_id}' not found."
+        return f"Capability [{cap.id}] is currently {cap.health.value}. Risk: {cap.risk_level.value}. Idempotency: {cap.idempotent.value}."
+    results = await capability_health_checker.run_all_checks()
+    return f"Probed {len(results)} capabilities: {results}"
+
+@tool
+def list_available_providers(capability_id: str) -> str:
+    """Lists registered execution providers and their priorities for a target capability.
+    
+    Args:
+        capability_id: Target capability ID (e.g. 'browser.navigate', 'voice.speak').
+    """
+    from capabilities.registry import capability_registry
+    cap = capability_registry.get_capability(capability_id)
+    if not cap:
+        return f"Capability '{capability_id}' not found."
+    if not cap.providers:
+        return f"No execution providers registered for '{capability_id}'."
+    lines = [f"Providers for '{capability_id}':"]
+    for pid, p in cap.providers.items():
+        lines.append(f"- {pid} [Prio: {p.priority}, Health: {p.health.value}, Latency: {p.latency_ms}ms, Env: {p.environment}]")
+    return "\n".join(lines)
+
 OMNIA_ALL_TOOLS = [
     unlock_all_devices,
     play_youtube_video,
@@ -400,6 +456,9 @@ OMNIA_ALL_TOOLS = [
     get_task_checkpoint_summary,
     compile_user_intent_plan,
     explain_execution_plan,
+    query_capability_registry,
+    check_capability_health,
+    list_available_providers,
 ]
 
 # Backward compatibility alias

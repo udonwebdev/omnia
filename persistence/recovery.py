@@ -53,8 +53,24 @@ class CrashRecoveryEngine:
         if val == CheckpointValidity.STALE:
             return RecoveryCondition.STALE, ResumeStrategy.REVALIDATE_AND_RESUME, "Checkpoint is older than freshness threshold"
 
-        # Check current node's idempotency contract
+        # Check current node's idempotency contract & capability availability
         if current_node:
+            # Module 17: Revalidate capability presence, health, and compatibility
+            cap_id = current_node.metadata.get("capability") if hasattr(current_node, "metadata") and isinstance(current_node.metadata, dict) else None
+            if cap_id:
+                try:
+                    from capabilities.registry import capability_registry
+                    from capabilities.models import CapabilityHealth
+                    cap = capability_registry.get_capability(cap_id)
+                    if not cap or cap.health in [CapabilityHealth.UNAVAILABLE, CapabilityHealth.FAILED, CapabilityHealth.DISABLED]:
+                        return (
+                            RecoveryCondition.UNCERTAIN,
+                            ResumeStrategy.REPLAN_FROM_CURRENT_STATE,
+                            f"CAPABILITY_CHANGED: Capability '{cap_id}' is no longer healthy or available."
+                        )
+                except Exception as e:
+                    logger.warning(f"Error checking capability '{cap_id}': {e}")
+
             if current_node.idempotency == "NOT_SAFE_TO_RETRY":
                 # E.g. payment, submit button, deletion, file destruction
                 return (
