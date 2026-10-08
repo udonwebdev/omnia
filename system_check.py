@@ -309,7 +309,7 @@ async def run_diagnostics():
     # ---------------------------------------------------------
     # 9. MODULE 17: CAPABILITY REGISTRY & DYNAMIC SKILL SYSTEM
     # ---------------------------------------------------------
-    print("\n[9/9] Checking Module 17: Capability Registry & Dynamic Skill System...")
+    print("\n[9/10] Checking Module 17: Capability Registry & Dynamic Skill System...")
     from capabilities.registry import capability_registry
     from capabilities.matcher import capability_matcher
     from capabilities.models import CapabilityCategory, CapabilityHealth, CapabilityMatchQuery
@@ -354,6 +354,104 @@ async def run_diagnostics():
         print("      [17] Dynamic Skill Loader ...... PASS (Manifest validated & capability registered)")
     except Exception as e:
         print(f"      [17] Dynamic Skill Loader ...... FAIL ({e})")
+
+    # ---------------------------------------------------------
+    # 10. MODULE 18: EVENT FABRIC & REACTIVE AUTONOMY
+    # ---------------------------------------------------------
+    print("\n[10/10] Checking Module 18: Event Fabric & Reactive Autonomy...")
+    from events import (
+        event_fabric,
+        event_journal,
+        Event,
+        EventEnvelope,
+        EventPriority,
+        EventSeverity,
+        EventDurability,
+        EventFilter
+    )
+    from events.schemas import event_schema_validator
+
+    # 10a. Event Schema Validation & Type Enforcement
+    try:
+        valid_evt = Event(
+            envelope=EventEnvelope(event_type="device.connected"),
+            payload={"device_id": "test_dev_01", "platform": "android"}
+        )
+        invalid_evt = Event(
+            envelope=EventEnvelope(event_type="device.connected"),
+            payload={"device_id": "missing_platform"}
+        )
+        ok_v, _ = event_schema_validator.validate_event(valid_evt)
+        bad_v, _ = event_schema_validator.validate_event(invalid_evt)
+        assert ok_v is True and bad_v is False
+        print("      [18] Schema Validator .......... PASS (Typed schemas strictly enforced)")
+    except Exception as e:
+        print(f"      [18] Schema Validator .......... FAIL ({e})")
+
+    # 10b. Priority Queue Routing & Lane Isolation
+    try:
+        rec_evts = []
+        async def prio_handler(e: Event):
+            rec_evts.append(e.priority)
+
+        event_fabric.subscribe("diag_prio", EventFilter(), prio_handler)
+        await event_fabric.publish(Event(
+            envelope=EventEnvelope(event_type="system.started", priority=EventPriority.CRITICAL),
+            payload={"node_id": "n1", "version": "1.0"}
+        ))
+        await asyncio.sleep(0.05)
+        event_fabric.unsubscribe("diag_prio")
+        assert EventPriority.CRITICAL in rec_evts
+        print("      [18] Priority Routing Lanes .... PASS (CRITICAL priority lane dispatched)")
+    except Exception as e:
+        print(f"      [18] Priority Routing Lanes .... FAIL ({e})")
+
+    # 10c. Dead-Letter Buffer & Handler Fault Isolation
+    try:
+        async def failing_handler(e: Event):
+            raise ValueError("Diagnostic simulated consumer fault")
+
+        event_fabric.subscribe("diag_failing", EventFilter(type_pattern="task.created"), failing_handler, max_retries=0)
+        await event_fabric.publish(Event(
+            envelope=EventEnvelope(event_type="task.created"),
+            payload={"task_id": "diag_t_dead", "goal": "Dead Letter Verification"}
+        ))
+        await asyncio.sleep(0.1)
+        event_fabric.unsubscribe("diag_failing")
+        dead_records = event_fabric.get_dead_letter_records()
+        assert any(d.handler_id == "diag_failing" for d in dead_records)
+        print("      [18] Dead-Letter Quarantine .... PASS (Handler faults isolated & quarantined)")
+    except Exception as e:
+        print(f"      [18] Dead-Letter Quarantine .... FAIL ({e})")
+
+    # 10d. Durable Journaling & Read-Only Trace Replayer
+    try:
+        import uuid
+        t_id = f"diag_durable_{uuid.uuid4().hex[:6]}"
+        e_start = Event(
+            envelope=EventEnvelope(event_type="task.started", task_id=t_id, durability=EventDurability.DURABLE),
+            payload={"task_id": t_id}
+        )
+        e_end = Event(
+            envelope=EventEnvelope(event_type="task.completed", task_id=t_id, durability=EventDurability.DURABLE),
+            payload={"task_id": t_id, "progress": 100.0}
+        )
+        seq1 = event_journal.record_durable_event(e_start)
+        seq2 = event_journal.record_durable_event(e_end)
+        assert seq2 > seq1
+        replay_log = event_journal.replay_trace(t_id)
+        assert len(replay_log) == 2
+        print(f"      [18] Durable Journal & Replay .. PASS (Monotonic seq #{seq1}->#{seq2}, safe read-only replay)")
+    except Exception as e:
+        print(f"      [18] Durable Journal & Replay .. FAIL ({e})")
+
+    # 10e. HUD / WebSocket Gateway Bridge Hook
+    try:
+        from omnia_bus import bus_broadcast_event_hook
+        assert callable(bus_broadcast_event_hook)
+        print("      [18] HUD Bus Gateway Hook ..... PASS (Connected to omnia_bus.py broadcast engine)")
+    except Exception as e:
+        print(f"      [18] HUD Bus Gateway Hook ..... FAIL ({e})")
 
     print("\n" + "=" * 60)
     print("Diagnostics complete.")

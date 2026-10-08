@@ -31,6 +31,21 @@ class ConnectionManager:
 
 manager = ConnectionManager()
 
+# Module 18: Hook EventFabric broadcasts directly to HUD websocket manager
+from events import event_fabric, Event, EventEnvelope, EventPriority, EventSeverity, EventDurability
+
+async def _hud_event_broadcaster(event: Event):
+    await manager.broadcast_json({
+        "type": "FABRIC_EVENT",
+        "event_type": event.type,
+        "priority": event.priority.name,
+        "payload": event.payload,
+        "timestamp": event.envelope.occurred_at
+    })
+
+event_fabric.add_broadcast_hook(_hud_event_broadcaster)
+bus_broadcast_event_hook = _hud_event_broadcaster
+
 class TabContextPayload(BaseModel):
     tab_id: int
     url: str
@@ -56,11 +71,33 @@ async def get_hud_ui():
 
 @app.post("/api/state")
 async def set_state(payload: Dict[str, Any]):
+    state_str = payload.get("state", "UNKNOWN")
+    msg_str = payload.get("message", "")
+    
+    # 1. Maintain backward compatibility with classic WebSocket HUD broadcast
     await manager.broadcast_json({
         "type": "STATE_CHANGE",
-        "state": payload.get("state", "UNKNOWN"),
-        "message": payload.get("message", "")
+        "state": state_str,
+        "message": msg_str
     })
+
+    # 2. Publish as typed event in EventFabric
+    await event_fabric.publish(Event(
+        envelope=EventEnvelope(
+            event_type="system.health_changed",
+            source="omnia.bus",
+            priority=EventPriority.NORMAL,
+            severity=EventSeverity.NOTICE,
+            durability=EventDurability.OPERATIONAL
+        ),
+        payload={
+            "subsystem": "hud",
+            "old_health": "ACTIVE",
+            "new_health": state_str,
+            "details": msg_str
+        }
+    ))
+
     return {"status": "broadcast_complete"}
 
 @app.post("/api/context/tab")

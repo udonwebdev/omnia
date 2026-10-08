@@ -96,6 +96,24 @@ class TaskExecutionEngine:
         persistence_store.append_event(graph.task_id, "TASK_STARTED", {"goal": graph.goal, "nodes": len(graph.nodes)})
         persistence_store.update_heartbeat(graph.task_id, graph.current_node_id)
 
+        # Module 18: Publish typed task.started event into Event Fabric
+        try:
+            from events import event_fabric, Event, EventEnvelope, EventPriority, EventSeverity, EventDurability
+            asyncio.create_task(event_fabric.publish(Event(
+                envelope=EventEnvelope(
+                    event_type="task.started",
+                    task_id=graph.task_id,
+                    correlation_id=graph.task_id,
+                    source="module.14.executor",
+                    priority=EventPriority.NORMAL,
+                    severity=EventSeverity.INFO,
+                    durability=EventDurability.DURABLE
+                ),
+                payload={"task_id": graph.task_id, "goal": graph.goal, "node_count": len(graph.nodes)}
+            )))
+        except Exception:
+            pass
+
         # Create Task Start Checkpoint
         checkpoint_manager.create_checkpoint(
             task_id=graph.task_id,
@@ -228,6 +246,24 @@ class TaskExecutionEngine:
                     last_verified_observations=[],
                     policy_trigger=CheckpointPolicy.CHECKPOINT_TASK_COMPLETE
                 )
+
+                # Module 18: Publish typed task.completed event into Event Fabric
+                try:
+                    from events import event_fabric, Event, EventEnvelope, EventPriority, EventSeverity, EventDurability
+                    asyncio.create_task(event_fabric.publish(Event(
+                        envelope=EventEnvelope(
+                            event_type="task.completed",
+                            task_id=graph.task_id,
+                            correlation_id=graph.task_id,
+                            source="module.14.executor",
+                            priority=EventPriority.NORMAL,
+                            severity=EventSeverity.INFO,
+                            durability=EventDurability.DURABLE
+                        ),
+                        payload={"task_id": graph.task_id, "result": "SUCCESS", "progress": 100.0, "verified": True}
+                    )))
+                except Exception:
+                    pass
 
             # Final Task Record Update
             task_rec = persistence_store.load_task(graph.task_id)

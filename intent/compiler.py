@@ -85,15 +85,69 @@ class IntentCompiler:
 
         self.plan_history.setdefault(intent.intent_id, []).append(compiled_plan)
 
+        # Module 18: Publish intent.received event
+        try:
+            from events import event_fabric, Event, EventEnvelope, EventPriority, EventSeverity, EventDurability
+            asyncio.create_task(event_fabric.publish(Event(
+                envelope=EventEnvelope(
+                    event_type="intent.received",
+                    correlation_id=intent.intent_id,
+                    source="module.16.intent_compiler",
+                    priority=EventPriority.NORMAL,
+                    severity=EventSeverity.INFO,
+                    durability=EventDurability.OPERATIONAL
+                ),
+                payload={"intent_id": intent.intent_id, "raw_text": raw_text, "objective": intent.primary_objective}
+            )))
+        except Exception:
+            pass
+
         # 5. Check if Validation Succeeded
         if report.status in [ValidationStatus.INVALID, ValidationStatus.UNSAFE, ValidationStatus.REQUIRES_CLARIFICATION]:
             logger.warning(f"Compilation stopped: Status {report.status.value}. Errors: {report.errors}")
             await self._notify_hud(f"PLAN_{report.status.value}", f"Plan blocked: {report.status.value}")
+            try:
+                from events import event_fabric, Event, EventEnvelope, EventPriority, EventSeverity, EventDurability
+                asyncio.create_task(event_fabric.publish(Event(
+                    envelope=EventEnvelope(
+                        event_type="intent.ambiguous",
+                        correlation_id=intent.intent_id,
+                        source="module.16.intent_compiler",
+                        priority=EventPriority.HIGH,
+                        severity=EventSeverity.WARNING,
+                        durability=EventDurability.OPERATIONAL
+                    ),
+                    payload={
+                        "intent_id": intent.intent_id,
+                        "clarification_question": intent.ambiguity.clarification_question or "Clarification needed",
+                        "status": report.status.value
+                    }
+                )))
+            except Exception:
+                pass
             return None, compiled_plan
 
         # 6. Transform into Module 14 TaskGraph
         task_graph = self._build_task_graph(intent, steps)
         await self._notify_hud("PLAN_COMPILED", f"Ready: {len(steps)} steps compiled.")
+
+        # Module 18: Publish intent.compiled event
+        try:
+            from events import event_fabric, Event, EventEnvelope, EventPriority, EventSeverity, EventDurability
+            asyncio.create_task(event_fabric.publish(Event(
+                envelope=EventEnvelope(
+                    event_type="intent.compiled",
+                    correlation_id=intent.intent_id,
+                    source="module.16.intent_compiler",
+                    priority=EventPriority.NORMAL,
+                    severity=EventSeverity.INFO,
+                    durability=EventDurability.OPERATIONAL
+                ),
+                payload={"intent_id": intent.intent_id, "plan_id": compiled_plan.plan_id, "steps_count": len(steps)}
+            )))
+        except Exception:
+            pass
+
         return task_graph, compiled_plan
 
     def _build_task_graph(self, intent: UserIntent, steps: List[PlannedStep]) -> TaskGraph:

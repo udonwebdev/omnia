@@ -427,6 +427,63 @@ def list_available_providers(capability_id: str) -> str:
         lines.append(f"- {pid} [Prio: {p.priority}, Health: {p.health.value}, Latency: {p.latency_ms}ms, Env: {p.environment}]")
     return "\n".join(lines)
 
+@tool
+async def publish_custom_fabric_event(event_type: str, payload_json: str = "{}") -> str:
+    """Publishes a typed event directly into the Omnia Event Fabric.
+    
+    Args:
+        event_type: Validated event type string (e.g. 'device.connected', 'system.health_changed').
+        payload_json: Serialized JSON dictionary of event payload.
+    """
+    import json
+    from events import event_fabric, Event, EventEnvelope, EventPriority, EventSeverity, EventDurability
+    try:
+        data = json.loads(payload_json)
+    except Exception:
+        data = {"raw": payload_json}
+    
+    event = Event(
+        envelope=EventEnvelope(
+            event_type=event_type,
+            source="omnia.tools",
+            priority=EventPriority.NORMAL,
+            severity=EventSeverity.INFO,
+            durability=EventDurability.OPERATIONAL
+        ),
+        payload=data
+    )
+    ok = await event_fabric.publish(event)
+    return f"Event '{event_type}' ({event.id}) {'published successfully' if ok else 'failed to publish'}."
+
+@tool
+def query_event_trace(correlation_id: str) -> str:
+    """Queries ordered event journal history matching a correlation or task ID.
+    
+    Args:
+        correlation_id: The task or correlation ID to trace.
+    """
+    from events import event_journal
+    trace = event_journal.get_trace(correlation_id)
+    if not trace:
+        return f"No events recorded for trace '{correlation_id}'."
+    lines = [f"Trace for '{correlation_id}' ({len(trace)} events):"]
+    for item in trace:
+        lines.append(f"- [{item['sequence']}] {item['event_type']} ({item['event_id']})")
+    return "\n".join(lines)
+
+@tool
+def replay_event_trace(correlation_id: str) -> str:
+    """Performs a safe, read-only analytical reconstruction of an event trace without executing side effects.
+    
+    Args:
+        correlation_id: The task or correlation ID to reconstruct.
+    """
+    from events import event_journal
+    summary = event_journal.replay_trace(correlation_id)
+    if not summary:
+        return f"No events to replay for trace '{correlation_id}'."
+    return "\n".join(summary)
+
 OMNIA_ALL_TOOLS = [
     unlock_all_devices,
     play_youtube_video,
@@ -459,6 +516,9 @@ OMNIA_ALL_TOOLS = [
     query_capability_registry,
     check_capability_health,
     list_available_providers,
+    publish_custom_fabric_event,
+    query_event_trace,
+    replay_event_trace,
 ]
 
 # Backward compatibility alias

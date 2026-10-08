@@ -79,6 +79,25 @@ class CapabilityRegistry:
             "risk": capability.risk_level.value
         }, allowed=True, outcome="REGISTERED")
 
+        # Module 18: Publish capability.registered event into Event Fabric
+        try:
+            import asyncio
+            from events import event_fabric, Event, EventEnvelope, EventPriority, EventSeverity, EventDurability
+            loop = asyncio.get_event_loop() if asyncio.get_event_loop().is_running() else None
+            if loop:
+                loop.create_task(event_fabric.publish(Event(
+                    envelope=EventEnvelope(
+                        event_type="capability.registered",
+                        source="module.17.capability_registry",
+                        priority=EventPriority.NORMAL,
+                        severity=EventSeverity.INFO,
+                        durability=EventDurability.OPERATIONAL
+                    ),
+                    payload={"capability_id": capability.id, "category": capability.category.value, "version": capability.version}
+                )))
+        except Exception:
+            pass
+
         logger.info(f"Capability registered: {capability.id} v{capability.version} [{capability.category.value}]")
         return True, "REGISTERED"
 

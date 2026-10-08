@@ -212,6 +212,14 @@ class TaskPersistenceStore:
         try:
             with conn:
                 cursor = conn.cursor()
+                # Ensure parent task entry exists to satisfy foreign key constraint
+                now = time.time()
+                cursor.execute("""
+                    INSERT OR IGNORE INTO tasks (
+                        task_id, goal, status, created_at, updated_at, deadline_ts, task_timeout_sec
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                """, (task_id, f"Auto-created task stub for {task_id}", "RUNNING", now, now, now + 86400, 86400.0))
+
                 cursor.execute("SELECT COALESCE(MAX(sequence_number), 0) FROM task_events WHERE task_id = ?", (task_id,))
                 max_seq = cursor.fetchone()[0]
                 next_seq = max_seq + 1
