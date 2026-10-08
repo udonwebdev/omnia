@@ -168,6 +168,48 @@ EVENT_SCHEMAS: Dict[str, Dict[str, Any]] = {
     },
     "approval.execution_blocked": {
         "required_fields": ["approval_id", "reason"]
+    },
+    "schedule.created": {
+        "required_fields": ["schedule_id", "task_id"]
+    },
+    "schedule.admitted": {
+        "required_fields": ["schedule_id", "slot_id"]
+    },
+    "schedule.deferred": {
+        "required_fields": ["schedule_id", "reason"]
+    },
+    "schedule.waiting": {
+        "required_fields": ["schedule_id", "conflict_type"]
+    },
+    "schedule.rejected": {
+        "required_fields": ["schedule_id", "reason"]
+    },
+    "schedule.preempted": {
+        "required_fields": ["schedule_id", "preempted_by", "reason"]
+    },
+    "schedule.completed": {
+        "required_fields": ["schedule_id"]
+    },
+    "resource.reserved": {
+        "required_fields": ["reservation_id", "schedule_id", "resource_id"]
+    },
+    "resource.released": {
+        "required_fields": ["reservation_id", "resource_id"]
+    },
+    "resource.expired": {
+        "required_fields": ["reservation_id", "resource_id"]
+    },
+    "resource.conflict": {
+        "required_fields": ["schedule_id", "resource_id", "conflict_type"]
+    },
+    "resource.starvation": {
+        "required_fields": ["schedule_id", "wait_duration_sec"]
+    },
+    "resource.deadlock": {
+        "required_fields": ["cycle_tasks", "victim_task"]
+    },
+    "scheduler.pressure_changed": {
+        "required_fields": ["old_pressure", "new_pressure"]
     }
 }
 

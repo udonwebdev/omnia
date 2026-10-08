@@ -7,7 +7,7 @@ from typing import List, Tuple
 
 logger = logging.getLogger("Omnia.Persistence.Migrations")
 
-CURRENT_SCHEMA_VERSION = 2
+CURRENT_SCHEMA_VERSION = 3
 
 MIGRATION_V1 = """
 -- Schema Version 1: Durable Task Graph & Crash Recovery Tables
@@ -214,6 +214,90 @@ CREATE INDEX IF NOT EXISTS idx_approval_releases_approval_id ON approval_release
 CREATE INDEX IF NOT EXISTS idx_approval_releases_fingerprint ON approval_releases(fingerprint);
 """
 
+MIGRATION_V3 = """
+-- Schema Version 3: Autonomous Resource Scheduler & Concurrency Orchestrator Tables
+
+CREATE TABLE IF NOT EXISTS schedule_requests (
+    schedule_id TEXT PRIMARY KEY,
+    mission_id TEXT,
+    task_id TEXT NOT NULL,
+    task_node_id TEXT,
+    created_at REAL NOT NULL,
+    ready_at REAL,
+    deadline REAL,
+    priority TEXT NOT NULL,
+    urgency TEXT NOT NULL,
+    risk_level TEXT NOT NULL,
+    estimated_duration_sec REAL DEFAULT 10.0,
+    preemption_policy TEXT NOT NULL,
+    parallelizable INTEGER DEFAULT 1,
+    required_resources_json TEXT DEFAULT '[]',
+    exclusive_resources_json TEXT DEFAULT '[]',
+    shared_resources_json TEXT DEFAULT '[]',
+    required_capabilities_json TEXT DEFAULT '[]',
+    required_devices_json TEXT DEFAULT '[]',
+    dependencies_json TEXT DEFAULT '[]',
+    state TEXT NOT NULL,
+    assigned_slot_id TEXT,
+    priority_score REAL DEFAULT 0.0,
+    wait_count INTEGER DEFAULT 0,
+    metadata_json TEXT DEFAULT '{}'
+);
+
+CREATE INDEX IF NOT EXISTS idx_sched_state ON schedule_requests(state);
+CREATE INDEX IF NOT EXISTS idx_sched_task ON schedule_requests(task_id);
+CREATE INDEX IF NOT EXISTS idx_sched_prio ON schedule_requests(priority_score);
+
+CREATE TABLE IF NOT EXISTS resource_reservations (
+    reservation_id TEXT PRIMARY KEY,
+    schedule_id TEXT NOT NULL,
+    mission_id TEXT,
+    task_id TEXT NOT NULL,
+    task_node_id TEXT,
+    resource_id TEXT NOT NULL,
+    resource_type TEXT NOT NULL,
+    access_mode TEXT NOT NULL,
+    amount REAL DEFAULT 1.0,
+    created_at REAL NOT NULL,
+    expires_at REAL NOT NULL,
+    state TEXT NOT NULL,
+    lease_id TEXT,
+    lease_heartbeat REAL,
+    release_reason TEXT,
+    FOREIGN KEY (schedule_id) REFERENCES schedule_requests(schedule_id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_resv_sched ON resource_reservations(schedule_id);
+CREATE INDEX IF NOT EXISTS idx_resv_resource ON resource_reservations(resource_id);
+CREATE INDEX IF NOT EXISTS idx_resv_state ON resource_reservations(state);
+
+CREATE TABLE IF NOT EXISTS execution_slots (
+    slot_id TEXT PRIMARY KEY,
+    slot_name TEXT NOT NULL,
+    worker_type TEXT NOT NULL,
+    capacity REAL DEFAULT 1.0,
+    supported_capabilities_json TEXT DEFAULT '[]',
+    health TEXT NOT NULL,
+    current_schedule_id TEXT,
+    current_task_id TEXT,
+    updated_at REAL NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS scheduling_decisions (
+    decision_id TEXT PRIMARY KEY,
+    schedule_id TEXT NOT NULL,
+    decision TEXT NOT NULL,
+    reason TEXT NOT NULL,
+    priority_score REAL NOT NULL,
+    selected_slot_id TEXT,
+    conflicts_json TEXT DEFAULT '[]',
+    created_at REAL NOT NULL,
+    FOREIGN KEY (schedule_id) REFERENCES schedule_requests(schedule_id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_sched_dec_schedule ON scheduling_decisions(schedule_id);
+"""
+
 def backup_database(db_path: str, backup_dir: str = "persistence_backups") -> str:
     """Creates a timestamped snapshot of the SQLite database prior to any schema modification."""
     if not os.path.exists(db_path):
@@ -269,6 +353,17 @@ def apply_migrations(db_path: str) -> int:
             conn.commit()
             logger.info("Migration v2 applied successfully.")
             current_version = 2
+
+        if current_version < 3:
+            logger.info("Applying Migration v3 (Resource Scheduler & Concurrency Orchestrator Tables)...")
+            cursor.executescript(MIGRATION_V3)
+            cursor.execute(
+                "INSERT INTO schema_migrations (version, applied_at, description) VALUES (?, ?, ?)",
+                (3, time.time(), "Resource Scheduler and Concurrency Orchestrator tables")
+            )
+            conn.commit()
+            logger.info("Migration v3 applied successfully.")
+            current_version = 3
 
         return current_version
     except Exception as e:

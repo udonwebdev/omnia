@@ -642,6 +642,45 @@ async def emergency_invalidate_approvals(reason: str) -> str:
     count = await approval_gateway.emergency_invalidate(reason=reason)
     return f"Emergency invalidation completed: {count} pending approval(s) invalidated."
 
+# --- Module 21: Autonomous Resource Scheduler Tools ---
+@tool
+def get_scheduler_status() -> str:
+    """Retrieves real-time telemetry, queue depth, and worker slot allocation from the Resource Scheduler."""
+    from scheduler import resource_scheduler
+    t = resource_scheduler.get_telemetry()
+    return (
+        f"Scheduler Telemetry:\n"
+        f"Health:            {t.health.value}\n"
+        f"Pressure:          {t.pressure.value}\n"
+        f"Ready Queue:       {t.ready_queue_depth}\n"
+        f"Waiting Queue:     {t.waiting_queue_depth}\n"
+        f"Active Schedules:  {t.active_schedules}\n"
+        f"Execution Slots:   {t.idle_slots} idle / {t.total_slots} total\n"
+        f"Reservations:      {t.active_reservations}\n"
+        f"Deadlocks Detected:{t.deadlock_count}\n"
+        f"Starvations Reaped:{t.starvation_count}\n"
+        f"Preemptions:       {t.preemption_count}"
+    )
+
+@tool
+def list_scheduled_work() -> str:
+    """Lists all active and waiting tasks managed by the Autonomous Resource Scheduler."""
+    from scheduler import scheduler_persistence_manager
+    schedules = scheduler_persistence_manager.list_active_schedules()
+    if not schedules:
+        return "No active schedules currently managed by the scheduler."
+    lines = [f"Active Schedules ({len(schedules)}):"]
+    for s in schedules:
+        lines.append(f"- ID: {s.schedule_id} | Task: {s.task_id} | State: {s.state.value} | Priority Score: {s.priority_score:.1f} | Slot: {s.assigned_slot_id or 'None'}")
+    return "\n".join(lines)
+
+@tool
+async def trigger_scheduling_cycle() -> str:
+    """Triggers an immediate scheduling cycle to allocate resources and admit waiting work."""
+    from scheduler import resource_scheduler
+    decisions = await resource_scheduler.schedule_next()
+    return f"Scheduling cycle executed: {len(decisions)} decision(s) made ({sum(1 for d in decisions if d.decision.value == 'ADMIT')} admitted)."
+
 OMNIA_ALL_TOOLS = [
     unlock_all_devices,
     play_youtube_video,
@@ -688,6 +727,9 @@ OMNIA_ALL_TOOLS = [
     list_pending_human_approvals,
     get_approval_details,
     emergency_invalidate_approvals,
+    get_scheduler_status,
+    list_scheduled_work,
+    trigger_scheduling_cycle,
 ]
 
 # Backward compatibility alias

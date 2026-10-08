@@ -231,6 +231,29 @@ class TaskExecutionEngine:
                         persistence_store.append_event(graph.task_id, "APPROVAL_INVALID", {"node_id": node.node_id, "reason": release_reason})
                         break
 
+                # 3d. Module 21: Pre-Execution Resource Scheduler & Concurrency Admission Check
+                if node.metadata.get("requires_scheduling", False):
+                    from scheduler import resource_scheduler, ResourceRequirement, ResourceAccessMode
+                    sched_reqs = [
+                        ResourceRequirement(resource_id=r, access_mode=ResourceAccessMode.EXCLUSIVE)
+                        for r in node.required_resources
+                    ]
+                    sch = await resource_scheduler.submit_for_scheduling(
+                        task_id=graph.task_id,
+                        task_node_id=node.node_id,
+                        required_resources=sched_reqs,
+                        metadata=node.metadata
+                    )
+                    decisions = await resource_scheduler.schedule_next()
+                    sch_dec = next((d for d in decisions if d.schedule_id == sch.schedule_id), None)
+                    if not sch_dec or sch_dec.decision.value != "ADMIT":
+                        logger.warning(f"SCHEDULING_WAIT: Node '{node.name}' waiting for scheduler admission: {sch_dec.reason if sch_dec else 'Pending'}")
+                        graph.state = TaskState.WAITING
+                        graph.log_event("SCHEDULING_WAIT", {"node_id": node.node_id})
+                        persistence_store.append_event(graph.task_id, "SCHEDULING_WAIT", {"node_id": node.node_id})
+                        break
+                    node.metadata["schedule_id"] = sch.schedule_id
+
                 # 4. Acquire Resource Locks
                 acquired = await resource_manager.acquire_locks(graph.task_id, node.required_resources, timeout_sec=5.0)
                 if not acquired:
@@ -257,6 +280,9 @@ class TaskExecutionEngine:
                         graph.state = TaskState.FAILED
                         break
                 finally:
+                    if "schedule_id" in node.metadata:
+                        from scheduler import resource_scheduler
+                        await resource_scheduler.complete_schedule(node.metadata["schedule_id"], success=success if 'success' in locals() else False)
                     for r in node.required_resources:
                         persistence_store.release_resource_lock(r, graph.task_id)
                     await resource_manager.release_locks(graph.task_id, node.required_resources)

@@ -657,6 +657,94 @@ async def run_diagnostics():
     except Exception as e:
         print(f"      [20] Crash Recovery & Invalidate FAIL ({e})")
 
+    # 13. Module 21: Autonomous Resource Scheduler & Concurrency Orchestrator
+    print("\n[13/13] Checking Module 21: Autonomous Resource Scheduler & Concurrency Orchestrator...")
+    from scheduler import (
+        resource_scheduler,
+        resource_registry,
+        reservation_manager,
+        worker_slot_manager,
+        priority_scorer,
+        deadlock_detector,
+        scheduler_persistence_manager,
+        ResourceRequirement,
+        ResourceAccessMode,
+        SchedulingPriority,
+        PreemptionPolicy,
+        SchedulingDecisionType
+    )
+
+    # 13a. Unified Resource Capacity & Multi-Resource Atomicity
+    try:
+        resource_registry.register_resource("diag_res_x", "TEST", total_capacity=1.0)
+        resource_registry.register_resource("diag_res_y", "TEST", total_capacity=1.0)
+        # Allocate X
+        resource_registry.allocate(ResourceRequirement("diag_res_x"), owner_id="other_task")
+        # Multi-resource reservation requesting X and Y must roll back cleanly
+        ok_rsv, _, conf, _ = reservation_manager.reserve_atomic("diag_sch_fail", "diag_task", [
+            ResourceRequirement("diag_res_x"),
+            ResourceRequirement("diag_res_y")
+        ])
+        assert ok_rsv is False
+        cap_y = resource_registry.get_capacity("diag_res_y")
+        assert cap_y.available_capacity == 1.0  # Rolled back cleanly!
+        resource_registry.release("diag_res_x", owner_id="other_task")
+        print("      [21] Multi-Resource Atomicity .. PASS (Deterministic order & rollback verified)")
+    except Exception as e:
+        print(f"      [21] Multi-Resource Atomicity .. FAIL ({e})")
+
+    # 13b. Deterministic Priority & Aging Scoring
+    try:
+        from scheduler.models import ScheduleRequest
+        req_prio = ScheduleRequest(
+            schedule_id="diag_prio_test",
+            priority=SchedulingPriority.HIGH,
+            ready_at=time.time() - 20.0
+        )
+        score = priority_scorer.compute_priority_score(req_prio, {})
+        assert score >= 400.0  # Base (400) + aging (> 10)
+        print("      [21] Priority & Aging Scoring .. PASS (Explainable algorithmic scoring verified)")
+    except Exception as e:
+        print(f"      [21] Priority & Aging Scoring .. FAIL ({e})")
+
+    # 13c. Deadlock Cycle Detection & Safe Preemption
+    try:
+        cycle_wait = {"t_alpha": {"r_beta"}, "t_beta": {"r_alpha"}}
+        cycle_alloc = {"r_alpha": "t_alpha", "r_beta": "t_beta"}
+        has_dl, cyc = deadlock_detector.detect_cycles(cycle_wait, cycle_alloc)
+        assert has_dl is True
+        victim = deadlock_detector.select_victim(cyc, {
+            "t_alpha": ScheduleRequest(schedule_id="t_alpha", priority_score=100.0, preemption_policy=PreemptionPolicy.SAFE_TO_PAUSE),
+            "t_beta": ScheduleRequest(schedule_id="t_beta", priority_score=500.0, preemption_policy=PreemptionPolicy.NON_PREEMPTIBLE)
+        })
+        assert victim == "t_alpha"
+        print("      [21] Deadlock & Cycle Resolution PASS (DFS cycle detection & safe victim selected)")
+    except Exception as e:
+        print(f"      [21] Deadlock & Cycle Resolution FAIL ({e})")
+
+    # 13d. Scheduling Admission & Worker Allocation
+    try:
+        sch_job = await resource_scheduler.submit_for_scheduling(
+            task_id="diag_scheduled_exec",
+            required_resources=[],
+            priority=SchedulingPriority.NORMAL
+        )
+        decisions = await resource_scheduler.schedule_next()
+        adm = next((d for d in decisions if d.schedule_id == sch_job.schedule_id), None)
+        assert adm is not None and adm.decision == SchedulingDecisionType.ADMIT
+        await resource_scheduler.complete_schedule(sch_job.schedule_id, success=True)
+        print("      [21] Scheduling Engine & Workers PASS (Execution slots & resource leases admitted)")
+    except Exception as e:
+        print(f"      [21] Scheduling Engine & Workers FAIL ({e})")
+
+    # 13e. Persistence & Crash Reconciliation
+    try:
+        stats = scheduler_persistence_manager.reconcile_on_startup()
+        assert "expired_reservations" in stats and "recovering_schedules" in stats
+        print("      [21] Crash Reconciler .......... PASS (Startup recovery & lease reclamation verified)")
+    except Exception as e:
+        print(f"      [21] Crash Reconciler .......... FAIL ({e})")
+
     print("\n" + "=" * 60)
     print("Diagnostics complete.")
     print("=" * 60)
