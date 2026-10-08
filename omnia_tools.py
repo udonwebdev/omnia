@@ -141,6 +141,109 @@ async def broadcast_to_all_mesh_hosts(state: str, details: str = "") -> str:
     delivered = await mesh_replicator.broadcast_state(state, details)
     return f"State '{state}' replicated across {len(delivered)} mesh node(s): {delivered}"
 
+# --- Module 13: Multimodal Vision Tools ---
+from vision import vision_engine, VisionSource
+
+def _parse_source(src_str: str) -> VisionSource:
+    s = src_str.lower().strip()
+    if s == "android":
+        return VisionSource.ANDROID
+    elif s == "browser":
+        return VisionSource.BROWSER
+    return VisionSource.DESKTOP
+
+@tool
+async def capture_screen(source: str = "desktop") -> str:
+    """Captures and validates a screen frame from desktop, android, or browser.
+    
+    Args:
+        source: 'desktop', 'android', or 'browser'
+    """
+    try:
+        src = _parse_source(source)
+        frame = await vision_engine.capture(source=src)
+        return f"Frame captured: ID {frame.frame_id[:8]} ({frame.width}x{frame.height}) via {src.value} in {frame.capture_duration_ms:.1f}ms."
+    except Exception as e:
+        return f"Capture failed: {str(e)}"
+
+@tool
+async def analyze_screen(source: str = "desktop") -> str:
+    """Perceives and extracts visible text and UI elements from the active screen.
+    
+    Args:
+        source: 'desktop', 'android', or 'browser'
+    """
+    try:
+        src = _parse_source(source)
+        obs = await vision_engine.observe(source=src)
+        summary = [f"Analyzed frame {obs.frame.frame_id[:8]}: Detected {len(obs.elements)} visual element(s) in {obs.analysis_duration_ms:.1f}ms."]
+        for i, el in enumerate(obs.elements[:5], 1):
+            summary.append(f" {i}. [{el.element_type.value.upper()}] '{el.label}' (conf: {el.confidence:.2f})")
+        if len(obs.elements) > 5:
+            summary.append(f" ... and {len(obs.elements) - 5} more.")
+        return "\n".join(summary)
+    except Exception as e:
+        return f"Analysis failed: {str(e)}"
+
+@tool
+async def find_visual_element(target_description: str, source: str = "desktop") -> str:
+    """Locates and ranks visual elements matching a description (e.g., 'Continue button').
+    
+    Args:
+        target_description: Target text or button name to search for on screen.
+        source: 'desktop', 'android', or 'browser'
+    """
+    try:
+        src = _parse_source(source)
+        obs = await vision_engine.observe(source=src)
+        candidate = await vision_engine.locate(target_description, obs)
+        if not candidate:
+            return f"No visual candidate found matching: '{target_description}'"
+        el = candidate.element
+        cx, cy = el.bounding_box.center
+        return f"Found visual target '{el.label}' (Rank 1, Score {candidate.score:.2f}) at normalized center ({cx:.2f}, {cy:.2f}). Reason: {candidate.reason}"
+    except Exception as e:
+        return f"Locate failed: {str(e)}"
+
+@tool
+@guard_action
+async def click_visual_element(target_description: str, expected_change: str, source: str = "desktop") -> str:
+    """Executes the full Observe -> Locate -> Act -> Observe -> Verify loop on a target element.
+    
+    Args:
+        target_description: Target button or text description to click.
+        expected_change: What visual transition should happen afterwards.
+        source: 'desktop', 'android', or 'browser'
+    """
+    try:
+        src = _parse_source(source)
+        result = await vision_engine.observe_act_verify(
+            target_description=target_description,
+            expected_change=expected_change,
+            source=src,
+            action_type="click"
+        )
+        return f"Visual interaction result: {result}"
+    except Exception as e:
+        return f"Visual interaction failed: {str(e)}"
+
+@tool
+async def verify_visual_state(expected_text: str, source: str = "desktop") -> str:
+    """Captures the screen and verifies if expected text is visually present.
+    
+    Args:
+        expected_text: The string that must be present on screen.
+        source: 'desktop', 'android', or 'browser'
+    """
+    try:
+        src = _parse_source(source)
+        obs = await vision_engine.observe(source=src)
+        found = any(expected_text.lower() in el.text.lower() for el in obs.elements)
+        status = "VERIFIED" if found else "FAILED"
+        return f"Verification {status}: Text '{expected_text}' {'found' if found else 'not found'} on {src.value}."
+    except Exception as e:
+        return f"Verification failed: {str(e)}"
+
 OMNIA_ALL_TOOLS = [
     unlock_all_devices,
     play_youtube_video,
@@ -156,6 +259,11 @@ OMNIA_ALL_TOOLS = [
     stop_speech_playback,
     list_mesh_nodes,
     broadcast_to_all_mesh_hosts,
+    capture_screen,
+    analyze_screen,
+    find_visual_element,
+    click_visual_element,
+    verify_visual_state,
 ]
 
 # Backward compatibility alias
@@ -163,4 +271,5 @@ OMNIA_HARDWARE_TOOLS = OMNIA_ALL_TOOLS
 
 if __name__ == "__main__":
     print(f"Omnia Tools registered successfully: {[t.__name__ for t in OMNIA_ALL_TOOLS]}")
+
 
