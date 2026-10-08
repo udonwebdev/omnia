@@ -135,6 +135,39 @@ EVENT_SCHEMAS: Dict[str, Dict[str, Any]] = {
     },
     "mission.failed": {
         "required_fields": ["mission_id", "status"]
+    },
+    "approval.created": {
+        "required_fields": ["approval_id", "request_type", "risk_level"]
+    },
+    "approval.presented": {
+        "required_fields": ["approval_id", "channel"]
+    },
+    "approval.waiting": {
+        "required_fields": ["approval_id", "expires_in_sec"]
+    },
+    "approval.approved": {
+        "required_fields": ["approval_id", "decision_id", "decided_by"]
+    },
+    "approval.rejected": {
+        "required_fields": ["approval_id", "decision_id", "reason"]
+    },
+    "approval.deferred": {
+        "required_fields": ["approval_id", "decision_id"]
+    },
+    "approval.expired": {
+        "required_fields": ["approval_id"]
+    },
+    "approval.cancelled": {
+        "required_fields": ["approval_id", "reason"]
+    },
+    "approval.invalidated": {
+        "required_fields": ["approval_id", "reason"]
+    },
+    "approval.released": {
+        "required_fields": ["approval_id", "release_token", "fingerprint"]
+    },
+    "approval.execution_blocked": {
+        "required_fields": ["approval_id", "reason"]
     }
 }
 

@@ -563,6 +563,85 @@ def list_active_missions() -> str:
         lines.append(f"- ID: {m.mission_id} | Goal: '{m.objective[:35]}' | Status: {m.status.value} | Progress: {m.progress:.1f}%")
     return "\n".join(lines)
 
+# --- Module 20: Human Approval Gateway Tools ---
+@tool
+async def request_human_approval(
+    action: str,
+    title: str,
+    summary: str,
+    reason: str,
+    risk_level: str = "HIGH",
+    timeout_sec: float = 120.0
+) -> str:
+    """Creates a human approval request and waits for user decision."""
+    from approval import approval_gateway
+    req = await approval_gateway.create_request(
+        requested_action=action,
+        action_params={},
+        title=title,
+        summary=summary,
+        reason=reason,
+        risk_level=risk_level,
+        timeout_sec=timeout_sec
+    )
+    await approval_gateway.present_request(req.approval_id, channel="HUD")
+    res = await approval_gateway.wait_for_decision(req.approval_id, timeout_sec=timeout_sec)
+    return f"Approval request '{req.approval_id}' resolved with status: {res.status.value}"
+
+@tool
+async def submit_human_approval_decision(
+    approval_id: str,
+    decision: str,
+    reason: str = ""
+) -> str:
+    """Submits human decision (APPROVE, REJECT, DEFER, CANCEL) for a pending approval."""
+    from approval import approval_gateway, ApprovalDecisionType
+    dec_upper = decision.strip().upper()
+    try:
+        dec_type = ApprovalDecisionType[dec_upper]
+    except KeyError:
+        return f"Invalid decision '{decision}'. Must be one of APPROVE, REJECT, DEFER, CANCEL."
+    ok, rel, msg = await approval_gateway.submit_decision(approval_id, dec_type, reason=reason)
+    return f"Decision submitted: {msg} (Token: {rel.release_token if rel else 'None'})"
+
+@tool
+def list_pending_human_approvals() -> str:
+    """Lists all pending approval requests awaiting human decision."""
+    from approval import approval_gateway
+    pending = approval_gateway.list_pending()
+    if not pending:
+        return "No pending approval requests."
+    lines = [f"Pending Approvals ({len(pending)}):"]
+    for r in pending:
+        lines.append(f"- ID: {r.approval_id} | Title: '{r.title}' | Action: '{r.requested_action}' | Risk: {r.risk_level} | Status: {r.status.value}")
+    return "\n".join(lines)
+
+@tool
+def get_approval_details(approval_id: str) -> str:
+    """Retrieves full details and status of a specific approval request."""
+    from approval import approval_gateway
+    req = approval_gateway.get_approval(approval_id)
+    if not req:
+        return f"Approval request '{approval_id}' not found."
+    return (
+        f"Approval Details [{req.approval_id}]:\n"
+        f"Title:       {req.title}\n"
+        f"Status:      {req.status.value}\n"
+        f"Action:      {req.requested_action}\n"
+        f"Risk Level:  {req.risk_level}\n"
+        f"Summary:     {req.summary}\n"
+        f"Fingerprint: {req.fingerprint[:16]}...\n"
+        f"Reversible:  {req.is_reversible}\n"
+        f"Expires At:  {req.expires_at}"
+    )
+
+@tool
+async def emergency_invalidate_approvals(reason: str) -> str:
+    """Cancels and invalidates all pending approval requests immediately."""
+    from approval import approval_gateway
+    count = await approval_gateway.emergency_invalidate(reason=reason)
+    return f"Emergency invalidation completed: {count} pending approval(s) invalidated."
+
 OMNIA_ALL_TOOLS = [
     unlock_all_devices,
     play_youtube_video,
@@ -604,6 +683,11 @@ OMNIA_ALL_TOOLS = [
     resume_autonomous_mission,
     abort_autonomous_mission,
     list_active_missions,
+    request_human_approval,
+    submit_human_approval_decision,
+    list_pending_human_approvals,
+    get_approval_details,
+    emergency_invalidate_approvals,
 ]
 
 # Backward compatibility alias

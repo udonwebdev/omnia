@@ -201,6 +201,36 @@ class TaskExecutionEngine:
                         persistence_store.append_event(graph.task_id, "CAPABILITY_BLOCKED", {"node_id": node.node_id, "capability": cap_name})
                         break
 
+                # 3c. Module 20: Pre-Execution Human Approval & Release Token Verification
+                if node.metadata.get("requires_approval", False) or "approval_release_token" in node.metadata:
+                    release_token = node.metadata.get("approval_release_token")
+                    from approval import approval_gateway
+                    if not release_token:
+                        logger.warning(f"APPROVAL_REQUIRED: Node '{node.name}' requires human approval before execution.")
+                        graph.state = TaskState.WAITING
+                        graph.log_event("APPROVAL_REQUIRED", {"node_id": node.node_id})
+                        persistence_store.append_event(graph.task_id, "APPROVAL_REQUIRED", {"node_id": node.node_id})
+                        break
+                    
+                    # Verify approval token against live context and action fingerprint
+                    action_name = node.metadata.get("action_name", node.name)
+                    action_params = node.metadata.get("action_params", {})
+                    valid_release, release_reason = await approval_gateway.verify_and_consume_release(
+                        release_token=release_token,
+                        action=action_name,
+                        params=action_params,
+                        target_resource=node.required_resources[0] if node.required_resources else None,
+                        task_id=graph.task_id,
+                        task_node_id=node.node_id,
+                        plan_version=node.metadata.get("plan_version", 1)
+                    )
+                    if not valid_release:
+                        logger.error(f"APPROVAL_INVALID: Node '{node.name}' failed approval release check: {release_reason}")
+                        graph.state = TaskState.FAILED
+                        graph.log_event("APPROVAL_INVALID", {"node_id": node.node_id, "reason": release_reason})
+                        persistence_store.append_event(graph.task_id, "APPROVAL_INVALID", {"node_id": node.node_id, "reason": release_reason})
+                        break
+
                 # 4. Acquire Resource Locks
                 acquired = await resource_manager.acquire_locks(graph.task_id, node.required_resources, timeout_sec=5.0)
                 if not acquired:

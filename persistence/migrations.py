@@ -7,7 +7,7 @@ from typing import List, Tuple
 
 logger = logging.getLogger("Omnia.Persistence.Migrations")
 
-CURRENT_SCHEMA_VERSION = 1
+CURRENT_SCHEMA_VERSION = 2
 
 MIGRATION_V1 = """
 -- Schema Version 1: Durable Task Graph & Crash Recovery Tables
@@ -133,6 +133,87 @@ CREATE TABLE IF NOT EXISTS recovery_attempts (
 CREATE INDEX IF NOT EXISTS idx_recovery_task_id ON recovery_attempts(task_id);
 """
 
+MIGRATION_V2 = """
+-- Schema Version 2: Human Approval Gateway & Consent Orchestrator Tables
+
+CREATE TABLE IF NOT EXISTS approval_requests (
+    approval_id TEXT PRIMARY KEY,
+    version INTEGER DEFAULT 1,
+    created_at REAL NOT NULL,
+    updated_at REAL NOT NULL,
+    request_type TEXT NOT NULL,
+    title TEXT NOT NULL,
+    summary TEXT NOT NULL,
+    reason TEXT NOT NULL,
+    mission_id TEXT,
+    task_id TEXT,
+    task_node_id TEXT,
+    plan_version INTEGER DEFAULT 1,
+    capability_id TEXT,
+    provider_id TEXT,
+    risk_level TEXT NOT NULL,
+    policy_reference TEXT,
+    requested_action TEXT NOT NULL,
+    action_params_json TEXT DEFAULT '{}',
+    target_resource TEXT,
+    target_device TEXT,
+    target_application TEXT,
+    expected_effect TEXT,
+    potential_side_effects TEXT,
+    is_reversible INTEGER DEFAULT 0,
+    expires_at REAL NOT NULL,
+    scope TEXT NOT NULL,
+    fingerprint TEXT NOT NULL,
+    status TEXT NOT NULL,
+    created_by TEXT NOT NULL,
+    correlation_id TEXT,
+    causation_id TEXT,
+    metadata_json TEXT DEFAULT '{}'
+);
+
+CREATE INDEX IF NOT EXISTS idx_approvals_status ON approval_requests(status);
+CREATE INDEX IF NOT EXISTS idx_approvals_task_id ON approval_requests(task_id);
+CREATE INDEX IF NOT EXISTS idx_approvals_mission_id ON approval_requests(mission_id);
+CREATE INDEX IF NOT EXISTS idx_approvals_expires_at ON approval_requests(expires_at);
+
+CREATE TABLE IF NOT EXISTS approval_decisions (
+    decision_id TEXT PRIMARY KEY,
+    approval_id TEXT NOT NULL,
+    decision TEXT NOT NULL,
+    decided_at REAL NOT NULL,
+    decided_by TEXT NOT NULL,
+    decision_source TEXT NOT NULL,
+    device_id TEXT,
+    session_id TEXT,
+    reason TEXT,
+    approval_version INTEGER DEFAULT 1,
+    metadata_json TEXT DEFAULT '{}',
+    FOREIGN KEY (approval_id) REFERENCES approval_requests(approval_id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_approval_decisions_approval_id ON approval_decisions(approval_id);
+
+CREATE TABLE IF NOT EXISTS approval_releases (
+    release_token TEXT PRIMARY KEY,
+    approval_id TEXT NOT NULL,
+    task_id TEXT,
+    task_node_id TEXT,
+    mission_id TEXT,
+    authorized_action TEXT NOT NULL,
+    authorization_scope TEXT NOT NULL,
+    fingerprint TEXT NOT NULL,
+    authorized_at REAL NOT NULL,
+    expires_at REAL NOT NULL,
+    policy_reference TEXT,
+    consumed INTEGER DEFAULT 0,
+    consumed_at REAL,
+    FOREIGN KEY (approval_id) REFERENCES approval_requests(approval_id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_approval_releases_approval_id ON approval_releases(approval_id);
+CREATE INDEX IF NOT EXISTS idx_approval_releases_fingerprint ON approval_releases(fingerprint);
+"""
+
 def backup_database(db_path: str, backup_dir: str = "persistence_backups") -> str:
     """Creates a timestamped snapshot of the SQLite database prior to any schema modification."""
     if not os.path.exists(db_path):
@@ -166,7 +247,6 @@ def apply_migrations(db_path: str) -> int:
 
         if current_version < 1:
             logger.info("Applying Migration v1 (Initial Schema)...")
-            # If database already had tables without migration table, back it up
             if os.path.exists(db_path) and os.path.getsize(db_path) > 0:
                 backup_database(db_path)
 
@@ -178,6 +258,17 @@ def apply_migrations(db_path: str) -> int:
             conn.commit()
             logger.info("Migration v1 applied successfully.")
             current_version = 1
+
+        if current_version < 2:
+            logger.info("Applying Migration v2 (Human Approval Gateway Tables)...")
+            cursor.executescript(MIGRATION_V2)
+            cursor.execute(
+                "INSERT INTO schema_migrations (version, applied_at, description) VALUES (?, ?, ?)",
+                (2, time.time(), "Human Approval Gateway and Consent Orchestrator tables")
+            )
+            conn.commit()
+            logger.info("Migration v2 applied successfully.")
+            current_version = 2
 
         return current_version
     except Exception as e:

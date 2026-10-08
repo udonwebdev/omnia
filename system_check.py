@@ -562,6 +562,101 @@ async def run_diagnostics():
     except Exception as e:
         print(f"      [19] Mission Control Engine .... FAIL ({e})")
 
+    # 12. Module 20: Human Approval Gateway & Consent Orchestrator
+    print("\n[12/12] Checking Module 20: Human Approval Gateway & Consent Orchestrator...")
+    from approval import (
+        approval_gateway,
+        ApprovalStatus,
+        ApprovalDecisionType,
+        ApprovalScope,
+        fingerprint_generator,
+        approval_presentation_manager,
+        approval_persistence_manager
+    )
+
+    # 12a. Deterministic Action Fingerprint Integrity
+    try:
+        fp_a = fingerprint_generator.compute_action_fingerprint("restart_daemon", {"force": True}, target_resource="svc:daemon")
+        fp_b = fingerprint_generator.compute_action_fingerprint("restart_daemon", {"force": True}, target_resource="svc:daemon")
+        fp_c = fingerprint_generator.compute_action_fingerprint("restart_daemon", {"force": False}, target_resource="svc:daemon")
+        assert fp_a == fp_b and fp_a != fp_c
+        print("      [20] Action Fingerprinting ..... PASS (Deterministic SHA-256 drift detection verified)")
+    except Exception as e:
+        print(f"      [20] Action Fingerprinting ..... FAIL ({e})")
+
+    # 12b. Multi-Channel Presentation & Voice Ambiguity Filtering
+    try:
+        req_dummy = await approval_gateway.create_request(
+            requested_action="flush_dns",
+            action_params={},
+            title="Flush DNS",
+            summary="Flush resolver cache",
+            reason="DNS drift"
+        )
+        pres_hud = approval_presentation_manager.format_for_channel(req_dummy, "HUD")
+        pres_voice = approval_presentation_manager.format_for_channel(req_dummy, "VOICE")
+        assert pres_hud.channel == "HUD" and "Omnia requires your confirmation" in pres_voice.formatted_prompt
+        # Test voice ambiguity filtering with multiple requests
+        v_dec, _, _, v_expl = approval_presentation_manager.interpret_voice_response("yes please", [req_dummy, req_dummy])
+        assert v_dec is None and "Ambiguous voice response" in v_expl
+        print("      [20] Presentation & Voice ...... PASS (Normalized multi-channel & ambiguity filtering)")
+    except Exception as e:
+        print(f"      [20] Presentation & Voice ...... FAIL ({e})")
+
+    # 12c. Full Approval Lifecycle & Execution Release
+    try:
+        req_rel = await approval_gateway.create_request(
+            requested_action="reload_firewall",
+            action_params={"table": "filter"},
+            title="Reload Firewall",
+            summary="Reload packet filter",
+            reason="Policy rule added",
+            task_id="diag_task_fw",
+            task_node_id="n_fw"
+        )
+        ok, release, _ = await approval_gateway.submit_decision(
+            approval_id=req_rel.approval_id,
+            decision_type=ApprovalDecisionType.APPROVE,
+            decided_by="operator"
+        )
+        assert ok is True and release is not None
+        valid_rel, _ = await approval_gateway.verify_and_consume_release(
+            release_token=release.release_token,
+            action="reload_firewall",
+            params={"table": "filter"},
+            task_id="diag_task_fw",
+            task_node_id="n_fw"
+        )
+        assert valid_rel is True
+        print("      [20] Gateway Approval & Release  PASS (Lifecycle, release tokens & atomic consumption)")
+    except Exception as e:
+        print(f"      [20] Gateway Approval & Release  FAIL ({e})")
+
+    # 12d. Policy Override Prevention Invariant
+    try:
+        req_pol = await approval_gateway.create_request(
+            requested_action="execute_mesh_shell_command",
+            action_params={"shell_command": "rm -rf /"},
+            title="Dangerous Command",
+            summary="Destructive rm",
+            reason="Testing"
+        )
+        assert req_pol.status == ApprovalStatus.FAILED_TO_VALIDATE
+        print("      [20] Policy Engine Invariant ... PASS (Deny remains deny; approval cannot override policy)")
+    except Exception as e:
+        print(f"      [20] Policy Engine Invariant ... FAIL ({e})")
+
+    # 12e. Crash Recovery & Emergency Invalidation
+    try:
+        req_rec = await approval_gateway.create_request("diag_op", {}, "Diag", "Diag", "Reason")
+        stats = approval_persistence_manager.reconcile_on_startup()
+        assert "expired" in stats and "recovering" in stats
+        invalidated = await approval_gateway.emergency_invalidate("Diagnostic complete")
+        assert invalidated >= 1
+        print("      [20] Crash Recovery & Invalidate PASS (Startup reconciler & emergency shutdown verified)")
+    except Exception as e:
+        print(f"      [20] Crash Recovery & Invalidate FAIL ({e})")
+
     print("\n" + "=" * 60)
     print("Diagnostics complete.")
     print("=" * 60)
