@@ -319,6 +319,32 @@ def list_active_orchestration_tasks() -> str:
         report.append(f"- ID: {tid} | Goal: '{t.goal}' | State: {t.state.value}")
     return "\n".join(report)
 
+@tool
+def scan_and_list_interrupted_tasks() -> str:
+    """Scans durable database for tasks interrupted by unexpected crashes or dead heartbeats."""
+    from persistence import crash_recovery_engine
+    crashed = crash_recovery_engine.scan_for_crashes(heartbeat_timeout_sec=30.0)
+    if not crashed:
+        return "No interrupted tasks detected in durable storage."
+    report = [f"Detected {len(crashed)} Interrupted Tasks:"]
+    for c in crashed:
+        report.append(f"- Task: {c['task_id']} | Goal: '{c['goal']}' | Status: {c['status']} | Node: {c['current_node_id']}")
+    return "\n".join(report)
+
+@tool
+def get_task_checkpoint_summary(task_id: str) -> str:
+    """Fetches latest verified durable checkpoint details for an interrupted or completed task."""
+    from persistence import checkpoint_manager
+    chk = checkpoint_manager.store.get_latest_checkpoint(task_id)
+    if not chk:
+        return f"No checkpoints found for task '{task_id}'."
+    return (
+        f"Checkpoint: {chk.checkpoint_id} (Checksum: {chk.checksum[:10]})\n"
+        f"Task State: {chk.task_state} | Active Node: {chk.node_id}\n"
+        f"Trigger: {chk.policy_trigger} | Node States: {chk.node_states}\n"
+        f"Variables: {list(chk.variables.keys())}"
+    )
+
 OMNIA_ALL_TOOLS = [
     unlock_all_devices,
     play_youtube_video,
@@ -344,6 +370,8 @@ OMNIA_ALL_TOOLS = [
     pause_active_task,
     resume_active_task,
     list_active_orchestration_tasks,
+    scan_and_list_interrupted_tasks,
+    get_task_checkpoint_summary,
 ]
 
 # Backward compatibility alias

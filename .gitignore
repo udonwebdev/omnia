@@ -6,3 +6,5 @@ omnia_memory/
 *.incomplete
 venv/
 .env
+*.db
+persistence_backups/

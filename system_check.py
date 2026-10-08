@@ -179,6 +179,79 @@ async def run_diagnostics():
     except Exception as e:
         print(f"      [14] Self-Healing & Retry ...... FAIL ({e})")
 
+    # 7. Module 15: Persistent Task State & Crash Recovery
+    print("\n[7/7] Checking Module 15: Persistent Task State & Crash Recovery...")
+    import time
+    from persistence import (
+        persistence_store,
+        checkpoint_manager,
+        crash_recovery_engine,
+        apply_migrations,
+        CheckpointPolicy,
+        CheckpointValidity,
+        RecoveryCondition,
+        ResumeStrategy,
+        PersistedTaskRecord,
+        sanitize_payload
+    )
+
+    # 7a. Database Schema & Migrations
+    try:
+        ver = apply_migrations(persistence_store.db_path)
+        assert ver >= 1
+        print(f"      [15] Schema & Migrations ....... PASS (Version {ver} verified)")
+    except Exception as e:
+        print(f"      [15] Schema & Migrations ....... FAIL ({e})")
+
+    # 7b. Checkpoints & Integrity
+    try:
+        t_id = "sys_chk_task"
+        persistence_store.save_task(PersistedTaskRecord(
+            task_id=t_id, goal="Diag Task", status="RUNNING", current_node_id=None,
+            created_at=time.time(), started_at=time.time(), updated_at=time.time(),
+            completed_at=None, deadline_ts=time.time()+60, task_timeout_sec=60
+        ))
+        chk = checkpoint_manager.create_checkpoint(
+            task_id=t_id,
+            node_id="diag_node",
+            task_state="RUNNING",
+            node_states={"diag_node": "COMPLETED"},
+            variables={"status": "ok"},
+            resource_state=[],
+            last_verified_observations=[],
+            policy_trigger=CheckpointPolicy.CHECKPOINT_NODE_COMPLETE
+        )
+        assert checkpoint_manager.verify_checkpoint_integrity(chk) is True
+        print(f"      [15] Checkpoints & Checksum .... PASS (SHA-256: {chk.checksum[:8]}...)")
+    except Exception as e:
+        print(f"      [15] Checkpoints & Checksum .... FAIL ({e})")
+
+    # 7c. Task Journaling & Monotonic Sequencing
+    try:
+        s1 = persistence_store.append_event(t_id, "EVENT_A", {})
+        s2 = persistence_store.append_event(t_id, "EVENT_B", {})
+        assert s2 == s1 + 1
+        print("      [15] Task Journal .............. PASS (Monotonic event sequence enforced)")
+    except Exception as e:
+        print(f"      [15] Task Journal .............. FAIL ({e})")
+
+    # 7d. Crash Scan & Interrupted Task Classification
+    try:
+        crashed = crash_recovery_engine.scan_for_crashes(heartbeat_timeout_sec=0.01)
+        cond, strat, _ = crash_recovery_engine.classify_interrupted_task(t_id)
+        assert cond in [RecoveryCondition.RECOVERABLE, RecoveryCondition.UNCERTAIN]
+        print(f"      [15] Crash Recovery Engine ..... PASS (Condition: {cond.value}, Strategy: {strat.value})")
+    except Exception as e:
+        print(f"      [15] Crash Recovery Engine ..... FAIL ({e})")
+
+    # 7e. Credential Redaction & Sanitization
+    try:
+        san = sanitize_payload({"secret_key": "12345", "token": "Bearer abc", "data": "clean"})
+        assert san["secret_key"] == "[REDACTED]" and san["data"] == "clean"
+        print("      [15] Security & Redaction ...... PASS (Credentials automatically scrubbed)")
+    except Exception as e:
+        print(f"      [15] Security & Redaction ...... FAIL ({e})")
+
     print("\n" + "=" * 60)
     print("Diagnostics complete.")
     print("=" * 60)
