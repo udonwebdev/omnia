@@ -210,6 +210,48 @@ EVENT_SCHEMAS: Dict[str, Dict[str, Any]] = {
     },
     "scheduler.pressure_changed": {
         "required_fields": ["old_pressure", "new_pressure"]
+    },
+    "coordination.started": {
+        "required_fields": ["node_id", "epoch"]
+    },
+    "coordination.epoch_changed": {
+        "required_fields": ["old_epoch", "new_epoch", "leader_id"]
+    },
+    "leader.election_started": {
+        "required_fields": ["candidate_id", "epoch"]
+    },
+    "leader.elected": {
+        "required_fields": ["leader_id", "epoch", "lease_expires_at"]
+    },
+    "leader.lost": {
+        "required_fields": ["leader_id", "epoch", "reason"]
+    },
+    "node.joined": {
+        "required_fields": ["node_id", "epoch"]
+    },
+    "node.left": {
+        "required_fields": ["node_id", "reason"]
+    },
+    "node.suspected": {
+        "required_fields": ["node_id", "last_seen_sec"]
+    },
+    "ownership.claimed": {
+        "required_fields": ["claim_id", "subject_type", "subject_id", "owner_node_id", "epoch", "fencing_token"]
+    },
+    "ownership.released": {
+        "required_fields": ["claim_id", "subject_id"]
+    },
+    "ownership.expired": {
+        "required_fields": ["claim_id", "subject_id"]
+    },
+    "ownership.rejected": {
+        "required_fields": ["subject_id", "attempted_by", "current_owner"]
+    },
+    "failover.started": {
+        "required_fields": ["subject_id", "from_node", "to_node"]
+    },
+    "split_brain.detected": {
+        "required_fields": ["competing_leaders", "epoch"]
     }
 }
 

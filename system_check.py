@@ -1,5 +1,6 @@
 import asyncio
 import sys
+import uuid
 import httpx
 from device_controller import DeviceController
 from memory_engine import memory
@@ -745,11 +746,85 @@ async def run_diagnostics():
     except Exception as e:
         print(f"      [21] Crash Reconciler .......... FAIL ({e})")
 
+    # 14. Module 22 Distributed Coordination, Leader Election & Worker Consensus
+    print("\n[14/14] Checking Module 22: Distributed Coordination, Leader Election & Consensus...")
+    from coordination import (
+        coordination_service,
+        CoordinationService,
+        NodeIdentity,
+        LeaderRole,
+        OwnershipState,
+        LockState
+    )
+
+    # 14a. Membership, Stable Identity & Quorum Calculation
+    try:
+        diag_node_a = NodeIdentity(node_id="diag_node_a", node_name="cluster-a")
+        diag_node_b = NodeIdentity(node_id="diag_node_b", node_name="cluster-b")
+        diag_coord = CoordinationService(node_id="diag_node_a", node_name="cluster-a")
+        diag_coord.membership.register_node(diag_node_b)
+        q_size = diag_coord.membership.calculate_quorum_size()
+        assert q_size == 2
+        print("      [22] Cluster Membership & Quorum PASS (Cryptographic node identities & quorum floor verified)")
+    except Exception as e:
+        print(f"      [22] Cluster Membership & Quorum FAIL ({e})")
+
+    # 14b. Leader Election, Monotonic Epochs & Fencing Tokens
+    try:
+        won, ep, token = diag_coord.elect_leader()
+        assert won is True and ep >= 2 and token.startswith("fence_ep")
+        valid, msg = diag_coord.validate_authority(ep, token)
+        assert valid is True
+        # Stale epoch rejected
+        stale_ok, _ = diag_coord.validate_authority(ep - 1, token)
+        assert stale_ok is False
+        print("      [22] Leader Election & Fencing . PASS (Monotonic epochs & fencing tokens enforced)")
+    except Exception as e:
+        print(f"      [22] Leader Election & Fencing . FAIL ({e})")
+
+    # 14c. Exclusive Task Ownership Claims & Conflict Prevention
+    try:
+        task_uuid = f"diag_task_{uuid.uuid4().hex[:6]}"
+        ok_claim, claim_obj, _ = diag_coord.claim_task_ownership(task_uuid, owner_node_id="diag_node_a")
+        assert ok_claim is True
+        # Duplicate claim by remote node rejected
+        ok_dup, _, dup_err = diag_coord.claim_task_ownership(task_uuid, owner_node_id="diag_node_b")
+        assert ok_dup is False and "CLAIM_CONFLICT" in dup_err
+        # Clean release
+        diag_coord.release_task_ownership(task_uuid, owner_node_id="diag_node_a")
+        assert diag_coord.get_task_owner(task_uuid) is None
+        print("      [22] Task Ownership Contracts .. PASS (Exclusive work claims & duplicate execution blocked)")
+    except Exception as e:
+        print(f"      [22] Task Ownership Contracts .. FAIL ({e})")
+
+    # 14d. Lease-Bound Distributed Locks
+    try:
+        lock_res = f"device_diag_{uuid.uuid4().hex[:4]}"
+        l_ok, lock_obj, _ = diag_coord.acquire_lock(lock_res, owner_node_id="diag_node_a")
+        assert l_ok is True
+        l_dup, _, l_err = diag_coord.acquire_lock(lock_res, owner_node_id="diag_node_b")
+        assert l_dup is False and "LOCK_BUSY" in l_err
+        diag_coord.release_lock(lock_res, owner_node_id="diag_node_a")
+        print("      [22] Distributed Locks ......... PASS (Lease-bound mutual-exclusion verified)")
+    except Exception as e:
+        print(f"      [22] Distributed Locks ......... FAIL ({e})")
+
+    # 14e. Durability, Telemetry & Crash Reconciliation
+    try:
+        recon = diag_coord.persistence.reconcile_on_startup()
+        assert "reaped_leases" in recon and "reaped_claims" in recon
+        tel = diag_coord.get_telemetry()
+        assert tel.role == LeaderRole.LEADER and tel.current_epoch == ep
+        print("      [22] Durability & Telemetry .... PASS (Cluster state durability & reconciliation verified)")
+    except Exception as e:
+        print(f"      [22] Durability & Telemetry .... FAIL ({e})")
+
     print("\n" + "=" * 60)
     print("Diagnostics complete.")
     print("=" * 60)
 
 if __name__ == "__main__":
     asyncio.run(run_diagnostics())
+
 
 

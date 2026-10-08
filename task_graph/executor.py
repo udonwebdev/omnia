@@ -55,6 +55,49 @@ class TaskExecutionEngine:
         self.cancel_flags[graph.task_id] = False
         self.pause_flags[graph.task_id] = False
 
+        # Module 22: Distributed Task Ownership & Fencing Invariant
+        try:
+            from coordination import coordination_service
+            # If coordination service is running or task has distributed flag / remote claim
+            current_owner = coordination_service.get_task_owner(graph.task_id)
+            if current_owner and current_owner != coordination_service.node_id:
+                logger.error(f"OWNERSHIP_BLOCKED: Task {graph.task_id} is already claimed by remote node '{current_owner}'. Duplicate execution prevented.")
+                graph.state = TaskState.FAILED
+                graph.log_event("OWNERSHIP_CONFLICT", {"task_id": graph.task_id, "owner_node_id": current_owner})
+                return {
+                    "task_id": graph.task_id,
+                    "goal": graph.goal,
+                    "state": TaskState.FAILED.value,
+                    "error": f"OWNERSHIP_BLOCKED: Task owned by node '{current_owner}'",
+                    "progress_percentage": 0.0,
+                    "completed_nodes": 0,
+                    "total_nodes": len(graph.nodes),
+                    "replans": 0,
+                    "history_count": 0
+                }
+            
+            # Claim task ownership for local node
+            claimed, claim, msg = coordination_service.claim_task_ownership(
+                task_id=graph.task_id,
+                owner_node_id=coordination_service.node_id
+            )
+            if not claimed:
+                logger.error(f"OWNERSHIP_CLAIM_FAILED: Could not claim task {graph.task_id}: {msg}")
+                graph.state = TaskState.FAILED
+                return {
+                    "task_id": graph.task_id,
+                    "goal": graph.goal,
+                    "state": TaskState.FAILED.value,
+                    "error": f"OWNERSHIP_CLAIM_FAILED: {msg}",
+                    "progress_percentage": 0.0,
+                    "completed_nodes": 0,
+                    "total_nodes": len(graph.nodes),
+                    "replans": 0,
+                    "history_count": 0
+                }
+        except Exception as e:
+            logger.debug(f"Distributed coordination bypass or skip: {e}")
+
         context = self.contexts.get(graph.task_id) or ExecutionContext(task_id=graph.task_id)
         self.contexts[graph.task_id] = context
 
@@ -332,6 +375,13 @@ class TaskExecutionEngine:
                 persistence_store.save_task(task_rec)
 
         finally:
+            # Module 22: Release task ownership
+            try:
+                from coordination import coordination_service
+                coordination_service.release_task_ownership(graph.task_id)
+            except Exception:
+                pass
+
             # Release all remaining resource locks
             await resource_manager.release_locks(graph.task_id)
             if graph.task_id in self.active_tasks:

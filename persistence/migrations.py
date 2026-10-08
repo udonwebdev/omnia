@@ -7,7 +7,7 @@ from typing import List, Tuple
 
 logger = logging.getLogger("Omnia.Persistence.Migrations")
 
-CURRENT_SCHEMA_VERSION = 3
+CURRENT_SCHEMA_VERSION = 4
 
 MIGRATION_V1 = """
 -- Schema Version 1: Durable Task Graph & Crash Recovery Tables
@@ -298,6 +298,72 @@ CREATE TABLE IF NOT EXISTS scheduling_decisions (
 CREATE INDEX IF NOT EXISTS idx_sched_dec_schedule ON scheduling_decisions(schedule_id);
 """
 
+MIGRATION_V4 = """
+-- Schema Version 4: Distributed Coordination, Leader Election & Ownership Tables
+
+CREATE TABLE IF NOT EXISTS cluster_nodes (
+    node_id TEXT PRIMARY KEY,
+    node_name TEXT NOT NULL,
+    node_version TEXT NOT NULL,
+    public_key TEXT,
+    identity_fingerprint TEXT NOT NULL,
+    platform TEXT,
+    architecture TEXT,
+    endpoint_url TEXT,
+    trust_state TEXT NOT NULL,
+    membership_state TEXT NOT NULL,
+    created_at REAL NOT NULL,
+    last_seen REAL NOT NULL,
+    metadata_json TEXT DEFAULT '{}'
+);
+
+CREATE INDEX IF NOT EXISTS idx_cluster_nodes_state ON cluster_nodes(membership_state);
+CREATE INDEX IF NOT EXISTS idx_cluster_nodes_trust ON cluster_nodes(trust_state);
+
+CREATE TABLE IF NOT EXISTS leadership_leases (
+    lease_id TEXT PRIMARY KEY,
+    leader_id TEXT NOT NULL,
+    epoch INTEGER NOT NULL,
+    issued_at REAL NOT NULL,
+    expires_at REAL NOT NULL,
+    renewal_sequence INTEGER DEFAULT 1,
+    state TEXT NOT NULL,
+    fencing_token TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_leader_epoch ON leadership_leases(epoch);
+
+CREATE TABLE IF NOT EXISTS distributed_ownership_claims (
+    claim_id TEXT PRIMARY KEY,
+    subject_type TEXT NOT NULL,
+    subject_id TEXT NOT NULL,
+    owner_node_id TEXT NOT NULL,
+    epoch INTEGER NOT NULL,
+    issued_at REAL NOT NULL,
+    expires_at REAL NOT NULL,
+    fencing_token TEXT NOT NULL,
+    state TEXT NOT NULL,
+    metadata_json TEXT DEFAULT '{}'
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_owner_subject ON distributed_ownership_claims(subject_type, subject_id);
+CREATE INDEX IF NOT EXISTS idx_owner_node ON distributed_ownership_claims(owner_node_id);
+CREATE INDEX IF NOT EXISTS idx_owner_state ON distributed_ownership_claims(state);
+
+CREATE TABLE IF NOT EXISTS distributed_locks (
+    lock_id TEXT PRIMARY KEY,
+    resource_id TEXT UNIQUE NOT NULL,
+    owner_node_id TEXT NOT NULL,
+    epoch INTEGER NOT NULL,
+    fencing_token TEXT NOT NULL,
+    created_at REAL NOT NULL,
+    expires_at REAL NOT NULL,
+    state TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_dist_locks_resource ON distributed_locks(resource_id);
+"""
+
 def backup_database(db_path: str, backup_dir: str = "persistence_backups") -> str:
     """Creates a timestamped snapshot of the SQLite database prior to any schema modification."""
     if not os.path.exists(db_path):
@@ -364,6 +430,17 @@ def apply_migrations(db_path: str) -> int:
             conn.commit()
             logger.info("Migration v3 applied successfully.")
             current_version = 3
+
+        if current_version < 4:
+            logger.info("Applying Migration v4 (Distributed Coordination & Leadership Tables)...")
+            cursor.executescript(MIGRATION_V4)
+            cursor.execute(
+                "INSERT INTO schema_migrations (version, applied_at, description) VALUES (?, ?, ?)",
+                (4, time.time(), "Distributed Coordination, Leader Election and Ownership tables")
+            )
+            conn.commit()
+            logger.info("Migration v4 applied successfully.")
+            current_version = 4
 
         return current_version
     except Exception as e:

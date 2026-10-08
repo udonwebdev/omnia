@@ -681,6 +681,57 @@ async def trigger_scheduling_cycle() -> str:
     decisions = await resource_scheduler.schedule_next()
     return f"Scheduling cycle executed: {len(decisions)} decision(s) made ({sum(1 for d in decisions if d.decision.value == 'ADMIT')} admitted)."
 
+# --- Module 22: Distributed Coordination Tools ---
+@tool
+def get_coordination_status() -> str:
+    """Returns cluster coordination health, leader role, current epoch, and lease status."""
+    from coordination import coordination_service
+    t = coordination_service.get_telemetry()
+    return (
+        f"Coordination Telemetry:\n"
+        f"Local Node:          {t.local_node_id}\n"
+        f"Role:                {t.role.value}\n"
+        f"Epoch:               {t.current_epoch}\n"
+        f"Active Leader:       {t.current_leader or 'None'}\n"
+        f"Cluster Members:     {t.cluster_size}\n"
+        f"Quorum Size:         {t.quorum_size} (Has Quorum: {t.has_quorum})\n"
+        f"Active Claims:       {t.active_claims}\n"
+        f"Active Locks:        {t.active_locks}\n"
+        f"Fencing Violations:  {t.fencing_violations}\n"
+        f"Ownership Conflicts: {t.ownership_conflicts}"
+    )
+
+@tool
+def list_cluster_members() -> str:
+    """Lists all active, suspected, or quarantined nodes in the distributed cluster."""
+    from coordination import coordination_service
+    members = coordination_service.membership.get_active_members()
+    if not members:
+        return "No active cluster members registered."
+    lines = [f"Active Cluster Nodes ({len(members)}):"]
+    for m in members:
+        lines.append(f"- Node: {m.node_id} ({m.node_name}) | Trust: {m.trust_state.value} | State: {m.membership_state.value} | Endpoint: {m.endpoint_url}")
+    return "\n".join(lines)
+
+@tool
+def claim_task_ownership(task_id: str) -> str:
+    """Claims exclusive distributed ownership over a task to prevent duplicate node execution."""
+    from coordination import coordination_service
+    success, claim, msg = coordination_service.claim_task_ownership(task_id)
+    if success and claim:
+        return f"Ownership claimed for task '{task_id}' (Claim ID: {claim.claim_id}, Fencing Token: {claim.fencing_token})."
+    return f"Ownership claim rejected for task '{task_id}': {msg}"
+
+@tool
+def start_cluster_election() -> str:
+    """Triggers a consensus-backed leader election cycle in the distributed cluster."""
+    from coordination import coordination_service
+    success, epoch, token = coordination_service.elect_leader()
+    if success:
+        return f"Election SUCCESS: Local node elected leader for Epoch {epoch} (Fencing Token: {token})."
+    return f"Election FAILED: Could not achieve quorum majority for Epoch {epoch}."
+
+
 OMNIA_ALL_TOOLS = [
     unlock_all_devices,
     play_youtube_video,
@@ -730,6 +781,10 @@ OMNIA_ALL_TOOLS = [
     get_scheduler_status,
     list_scheduled_work,
     trigger_scheduling_cycle,
+    get_coordination_status,
+    list_cluster_members,
+    claim_task_ownership,
+    start_cluster_election,
 ]
 
 # Backward compatibility alias
