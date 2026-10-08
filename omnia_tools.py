@@ -244,6 +244,81 @@ async def verify_visual_state(expected_text: str, source: str = "desktop") -> st
     except Exception as e:
         return f"Verification failed: {str(e)}"
 
+# --- Module 14: Dynamic Task Graph & Self-Healing Tools ---
+import json
+from task_graph import (
+    task_executor,
+    TaskGraph,
+    TaskNode,
+    TaskState,
+    IdempotencyLevel,
+    ExecutionContext
+)
+
+@tool
+def get_active_task_status(task_id: str) -> str:
+    """Returns the current execution state, active node, and progress percentage of a task.
+    
+    Args:
+        task_id: Unique task identifier.
+    """
+    task = task_executor.active_tasks.get(task_id)
+    if not task:
+        return f"Task '{task_id}' not found in active task registry."
+    
+    total = len(task.nodes)
+    completed = sum(1 for n in task.nodes.values() if n.state.value == "COMPLETED")
+    pct = (completed / total * 100.0) if total > 0 else 0.0
+    return f"Task ID: {task.task_id} | State: {task.state.value} | Current Node: {task.current_node_id} | Progress: {pct:.1f}% ({completed}/{total}) | Replans: {task.replan_count}"
+
+@tool
+def cancel_active_task(task_id: str) -> str:
+    """Cancels a running task graph and releases all held hardware/browser locks.
+    
+    Args:
+        task_id: Unique task identifier to cancel.
+    """
+    if task_id in task_executor.active_tasks:
+        task_executor.cancel_task(task_id)
+        return f"Task '{task_id}' cancellation signal dispatched."
+    return f"Task '{task_id}' not found."
+
+@tool
+def pause_active_task(task_id: str) -> str:
+    """Pauses a running task, preserving current node state without executing further actions.
+    
+    Args:
+        task_id: Unique task identifier to pause.
+    """
+    if task_id in task_executor.active_tasks:
+        task_executor.pause_task(task_id)
+        return f"Task '{task_id}' paused."
+    return f"Task '{task_id}' not found."
+
+@tool
+def resume_active_task(task_id: str) -> str:
+    """Resumes a paused task, allowing next steps to execute.
+    
+    Args:
+        task_id: Unique task identifier to resume.
+    """
+    if task_id in task_executor.active_tasks:
+        task_executor.resume_task(task_id)
+        return f"Task '{task_id}' resumed."
+    return f"Task '{task_id}' not found."
+
+@tool
+def list_active_orchestration_tasks() -> str:
+    """Lists all running and managed autonomous task graphs."""
+    tasks = task_executor.active_tasks
+    if not tasks:
+        return "No active tasks currently executing in the task engine."
+    
+    report = [f"Active Orchestration Tasks ({len(tasks)}):"]
+    for tid, t in tasks.items():
+        report.append(f"- ID: {tid} | Goal: '{t.goal}' | State: {t.state.value}")
+    return "\n".join(report)
+
 OMNIA_ALL_TOOLS = [
     unlock_all_devices,
     play_youtube_video,
@@ -264,6 +339,11 @@ OMNIA_ALL_TOOLS = [
     find_visual_element,
     click_visual_element,
     verify_visual_state,
+    get_active_task_status,
+    cancel_active_task,
+    pause_active_task,
+    resume_active_task,
+    list_active_orchestration_tasks,
 ]
 
 # Backward compatibility alias
@@ -271,5 +351,6 @@ OMNIA_HARDWARE_TOOLS = OMNIA_ALL_TOOLS
 
 if __name__ == "__main__":
     print(f"Omnia Tools registered successfully: {[t.__name__ for t in OMNIA_ALL_TOOLS]}")
+
 
 

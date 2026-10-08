@@ -104,6 +104,81 @@ async def run_diagnostics():
     except Exception as e:
         print(f"      [13] Visual Verification ..... FAIL ({e})")
 
+    # 6. Module 14: Dynamic Task Graph & Self-Healing Execution Engine
+    print("\n[6/6] Checking Module 14: Dynamic Task Graph & Self-Healing Engine...")
+    from task_graph import (
+        task_executor,
+        TaskGraph,
+        TaskNode,
+        TaskState,
+        NodeState,
+        FailureCategory,
+        RecoveryStrategy,
+        ExecutionContext,
+        resource_manager
+    )
+
+    # 6a. Task Graph & Sequential Execution
+    try:
+        tg = TaskGraph(goal="Test Task Pipeline")
+        async def step1(ctx): return "data_loaded"
+        async def step2(ctx): return "data_processed"
+        async def verify_step2(ctx, res): return res == "data_processed"
+
+        tg.add_node(TaskNode(node_id="n1", name="Load Data", description="Load initial data", action=step1))
+        tg.add_node(TaskNode(node_id="n2", name="Process Data", description="Process loaded data", action=step2, verifier=verify_step2, dependencies=["n1"]))
+
+        res = await task_executor.execute_task(tg)
+        assert res["state"] == "COMPLETED" and res["completed_nodes"] == 2
+        print("      [14] Task Graph & Executor ..... PASS (2/2 nodes completed)")
+    except Exception as e:
+        print(f"      [14] Task Graph & Executor ..... FAIL ({e})")
+
+    # 6b. Resource Locking
+    try:
+        locked = await resource_manager.acquire_locks("task_a", ["desktop:mouse"], timeout_sec=1.0)
+        assert locked is True
+        # Task B trying to acquire same resource should timeout/fail
+        locked_b = await resource_manager.acquire_locks("task_b", ["desktop:mouse"], timeout_sec=0.2)
+        assert locked_b is False
+        await resource_manager.release_locks("task_a")
+        # Now task B should acquire
+        locked_b_retry = await resource_manager.acquire_locks("task_b", ["desktop:mouse"], timeout_sec=1.0)
+        assert locked_b_retry is True
+        await resource_manager.release_locks("task_b")
+        print("      [14] Resource Lock Manager ..... PASS (Deadlock prevention & mutual exclusion)")
+    except Exception as e:
+        print(f"      [14] Resource Lock Manager ..... FAIL ({e})")
+
+    # 6c. Dynamic Replanning & Self-Healing Loop
+    try:
+        tg_heal = TaskGraph(goal="Self-Healing Recovery Demo")
+        attempt_count = 0
+        async def failing_action(ctx):
+            nonlocal attempt_count
+            attempt_count += 1
+            if attempt_count < 2:
+                raise RuntimeError("TRANSIENT: Network handshake glitch")
+            return "recovered_ok"
+
+        async def verify_heal(ctx, r):
+            return r == "recovered_ok"
+
+        tg_heal.add_node(TaskNode(
+            node_id="heal_1",
+            name="Transient Step",
+            description="Recovers on retry",
+            action=failing_action,
+            expected_state="recovered_ok",
+            verifier=verify_heal
+        ))
+
+        heal_res = await task_executor.execute_task(tg_heal)
+        assert heal_res["state"] == "COMPLETED"
+        print("      [14] Self-Healing & Retry ...... PASS (Automatic transient recovery)")
+    except Exception as e:
+        print(f"      [14] Self-Healing & Retry ...... FAIL ({e})")
+
     print("\n" + "=" * 60)
     print("Diagnostics complete.")
     print("=" * 60)
