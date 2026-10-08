@@ -7,7 +7,7 @@ from typing import List, Tuple
 
 logger = logging.getLogger("Omnia.Persistence.Migrations")
 
-CURRENT_SCHEMA_VERSION = 5
+CURRENT_SCHEMA_VERSION = 6
 
 MIGRATION_V1 = """
 -- Schema Version 1: Durable Task Graph & Crash Recovery Tables
@@ -464,6 +464,101 @@ CREATE TABLE IF NOT EXISTS replication_conflicts (
 CREATE INDEX IF NOT EXISTS idx_repl_conflicts_status ON replication_conflicts(resolution_status);
 """
 
+MIGRATION_V6 = """
+-- Schema Version 6: Distributed Configuration, Policy & Runtime Control Plane
+
+CREATE TABLE IF NOT EXISTS config_schemas (
+    key TEXT PRIMARY KEY,
+    domain TEXT NOT NULL,
+    data_type TEXT NOT NULL,
+    default_value_json TEXT NOT NULL,
+    schema_spec_json TEXT NOT NULL,
+    scope TEXT NOT NULL DEFAULT 'CLUSTER',
+    mutability TEXT NOT NULL DEFAULT 'HOT_RELOAD',
+    requires_restart INTEGER NOT NULL DEFAULT 0,
+    is_secret INTEGER NOT NULL DEFAULT 0,
+    allowed_values_json TEXT DEFAULT '[]',
+    min_value REAL,
+    max_value REAL,
+    unit TEXT,
+    description TEXT,
+    dependencies_json TEXT DEFAULT '[]',
+    created_at REAL NOT NULL,
+    updated_at REAL NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_config_schemas_domain ON config_schemas(domain);
+
+CREATE TABLE IF NOT EXISTS config_versions (
+    version INTEGER PRIMARY KEY,
+    parent_version INTEGER,
+    scope TEXT NOT NULL,
+    target_entity TEXT NOT NULL DEFAULT 'CLUSTER',
+    content_hash TEXT NOT NULL,
+    values_json TEXT NOT NULL,
+    author TEXT NOT NULL,
+    justification TEXT,
+    approval_token TEXT,
+    status TEXT NOT NULL DEFAULT 'STAGED',
+    created_at REAL NOT NULL,
+    activated_at REAL
+);
+
+CREATE INDEX IF NOT EXISTS idx_config_versions_status ON config_versions(status);
+CREATE INDEX IF NOT EXISTS idx_config_versions_created_at ON config_versions(created_at);
+
+CREATE TABLE IF NOT EXISTS config_values (
+    key TEXT NOT NULL,
+    scope TEXT NOT NULL,
+    entity_id TEXT NOT NULL,
+    value_json TEXT NOT NULL,
+    version INTEGER NOT NULL,
+    is_secret_ref INTEGER NOT NULL DEFAULT 0,
+    updated_at REAL NOT NULL,
+    PRIMARY KEY (key, scope, entity_id),
+    FOREIGN KEY (key) REFERENCES config_schemas(key) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_config_values_scope_entity ON config_values(scope, entity_id);
+
+CREATE TABLE IF NOT EXISTS config_rollouts (
+    rollout_id TEXT PRIMARY KEY,
+    version INTEGER NOT NULL,
+    strategy TEXT NOT NULL,
+    status TEXT NOT NULL,
+    batch_size INTEGER NOT NULL DEFAULT 1,
+    failure_threshold_pct REAL NOT NULL DEFAULT 0.0,
+    target_nodes_json TEXT NOT NULL DEFAULT '[]',
+    completed_nodes_json TEXT NOT NULL DEFAULT '[]',
+    failed_nodes_json TEXT NOT NULL DEFAULT '[]',
+    current_batch INTEGER NOT NULL DEFAULT 0,
+    created_at REAL NOT NULL,
+    updated_at REAL NOT NULL,
+    failure_reason TEXT,
+    FOREIGN KEY (version) REFERENCES config_versions(version)
+);
+
+CREATE INDEX IF NOT EXISTS idx_config_rollouts_version ON config_rollouts(version);
+CREATE INDEX IF NOT EXISTS idx_config_rollouts_status ON config_rollouts(status);
+
+CREATE TABLE IF NOT EXISTS config_drift_records (
+    drift_id TEXT PRIMARY KEY,
+    node_id TEXT NOT NULL,
+    detected_at REAL NOT NULL,
+    key TEXT NOT NULL,
+    expected_version INTEGER NOT NULL,
+    expected_value_json TEXT NOT NULL,
+    actual_value_json TEXT NOT NULL,
+    drift_type TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'DETECTED',
+    resolved_at REAL,
+    resolution_notes TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_config_drift_node ON config_drift_records(node_id);
+CREATE INDEX IF NOT EXISTS idx_config_drift_status ON config_drift_records(status);
+"""
+
 def backup_database(db_path: str, backup_dir: str = "persistence_backups") -> str:
     """Creates a timestamped snapshot of the SQLite database prior to any schema modification."""
     if not os.path.exists(db_path):
@@ -552,6 +647,17 @@ def apply_migrations(db_path: str) -> int:
             conn.commit()
             logger.info("Migration v5 applied successfully.")
             current_version = 5
+
+        if current_version < 6:
+            logger.info("Applying Migration v6 (Distributed Configuration & Control Plane Tables)...")
+            cursor.executescript(MIGRATION_V6)
+            cursor.execute(
+                "INSERT INTO schema_migrations (version, applied_at, description) VALUES (?, ?, ?)",
+                (6, time.time(), "Distributed Configuration, Policy and Runtime Control Plane tables")
+            )
+            conn.commit()
+            logger.info("Migration v6 applied successfully.")
+            current_version = 6
 
         return current_version
     except Exception as e:

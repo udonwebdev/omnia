@@ -71,6 +71,15 @@ DEFAULT_NAMESPACES: Dict[str, StateNamespace] = {
         consistency_policy=ConsistencyPolicy.LOCAL_ONLY,
         sensitivity=StateClassification.EPHEMERAL,
         enabled=False
+    ),
+    # 8. Cluster Runtime Configuration (Authoritative + Replicated across nodes)
+    "config": StateNamespace(
+        namespace_id="config",
+        name="Cluster Runtime Configuration & Policy",
+        owner_type="LEADER",
+        replication_policy=StateClassification.REPLICATED,
+        consistency_policy=ConsistencyPolicy.STRONG,
+        sensitivity=StateClassification.AUTHORITATIVE
     )
 }
 

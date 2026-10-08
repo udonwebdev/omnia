@@ -898,6 +898,148 @@ async def run_diagnostics():
     except Exception as e:
         print(f"      [23] Anti-Entropy Reconciliation FAIL ({e})")
 
+    # 16. Module 24 Distributed Configuration, Policy & Runtime Control Plane
+    print("\n[16/16] Checking Module 24: Distributed Configuration & Control Plane...")
+    from config import (
+        config_control_plane,
+        ConfigScope,
+        RolloutStrategy,
+        RolloutStatus,
+        ConfigValue,
+        ConfigVersion
+    )
+
+    # 16a. Schema Catalog & Domain Coverage
+    try:
+        schemas = config_control_plane.list_schemas()
+        domains = {s.domain for s in schemas}
+        expected_domains = {"system", "execution", "vision", "browser", "mesh", "coordination", "replication", "scheduler", "supervisor", "approval", "security"}
+        assert expected_domains.issubset(domains), f"Missing domains: {expected_domains - domains}"
+        print(f"      [24] Schema Registry Coverage . PASS ({len(schemas)} schemas across {len(domains)} domains verified)")
+    except Exception as e:
+        print(f"      [24] Schema Registry Coverage . FAIL ({e})")
+
+    # 16b. Validation, Bounds & Secret Masking
+    try:
+        # Valid bounds
+        valid_res, errs = config_control_plane.validator.validate_configuration(
+            {"execution.max_retries": 5, "vision.capture_fps": 15},
+            config_control_plane._schemas
+        )
+        assert valid_res is True
+
+        # Invalid bounds
+        invalid_res, invalid_errs = config_control_plane.validator.validate_configuration(
+            {"execution.max_retries": 999},
+            config_control_plane._schemas
+        )
+        assert invalid_res is False and len(invalid_errs) > 0
+
+        # Dependency check: heartbeat_period_sec must be < lease_ttl_sec
+        dep_res, dep_errs = config_control_plane.validator.validate_configuration(
+            {"coordination.heartbeat_period_sec": 15.0, "coordination.lease_ttl_sec": 10.0},
+            config_control_plane._schemas
+        )
+        assert dep_res is False and any("DEPENDENCY_ERROR" in e for e in dep_errs)
+
+        # Secret Masking
+        v_dict = config_control_plane.persistence.get_version(1).to_dict(mask_secrets=True)
+        assert v_dict["values"]["security.api_auth_token_ref"] == "[SECRET_MASKED]"
+        print("      [24] Schema Validation & Bounds PASS (Type checks, range constraints, dependencies, & secret masking verified)")
+    except Exception as e:
+        print(f"      [24] Schema Validation & Bounds FAIL ({e})")
+
+    # 16c. Hierarchical Resolution & Overrides
+    try:
+        # Set a node-level override and device-level override
+        node_val = ConfigValue(
+            key="execution.worker_concurrency",
+            scope=ConfigScope.NODE,
+            entity_id="node_special_1",
+            value=12,
+            version=1
+        )
+        config_control_plane.persistence.save_value(node_val)
+
+        dev_val = ConfigValue(
+            key="vision.capture_fps",
+            scope=ConfigScope.DEVICE,
+            entity_id="camera_high_res",
+            value=30,
+            version=1
+        )
+        config_control_plane.persistence.save_value(dev_val)
+
+        # Precedence check
+        # 1. Default cluster value
+        c_val = config_control_plane.resolve_effective_value("execution.worker_concurrency")
+        assert c_val == 4
+        # 2. Node override wins for node_special_1
+        n_val = config_control_plane.resolve_effective_value("execution.worker_concurrency", node_id="node_special_1")
+        assert n_val == 12
+        # 3. Device override wins for camera_high_res
+        d_val = config_control_plane.resolve_effective_value("vision.capture_fps", device_id="camera_high_res")
+        assert d_val == 30
+
+        print("      [24] Scope Precedence Hierarchy PASS (DEVICE > NODE > CLUSTER > GLOBAL deterministic resolution verified)")
+    except Exception as e:
+        print(f"      [24] Scope Precedence Hierarchy FAIL ({e})")
+
+    # 16d. Staged Versioning, Rollout & Safe Rollback
+    try:
+        cur_v = config_control_plane.get_telemetry().current_version
+        latest_v = config_control_plane.persistence.get_latest_version_num()
+        stage_ok, new_ver, _ = config_control_plane.propose_version(
+            values={"system.log_level": "DEBUG", "execution.step_timeout_sec": 45.0},
+            author="diag_runner",
+            justification="Diagnostic rollout test",
+            parent_version=cur_v
+        )
+        assert stage_ok is True
+        assert new_ver.version == latest_v + 1
+        assert new_ver.content_hash == ConfigVersion.compute_hash(new_ver.values, "CLUSTER", "CLUSTER", cur_v)
+
+        # Roll out version across 3 nodes
+        roll_ok, rollout, _ = config_control_plane.activate_version(
+            version_num=new_ver.version,
+            target_nodes=["node_alpha", "node_beta", "node_gamma"],
+            strategy=RolloutStrategy.ROLLING,
+            batch_size=2
+        )
+        assert roll_ok is True and rollout.status == RolloutStatus.COMPLETED
+
+        # Roll back to previous version
+        rb_ok, rb_ver, _ = config_control_plane.rollback_version(
+            current_version_num=new_ver.version,
+            target_version_num=cur_v,
+            reason="Diagnostic rollback test",
+            target_nodes=["node_alpha", "node_beta", "node_gamma"]
+        )
+        assert rb_ok is True and rb_ver.version == cur_v
+        print("      [24] Versioning, Rollout & Rollback PASS (Optimistic concurrency, rolling stages, & atomic reversion verified)")
+    except Exception as e:
+        print(f"      [24] Versioning, Rollout & Rollback FAIL ({e})")
+
+    # 16e. Drift Detection & Remediation
+    try:
+        active_ver = config_control_plane.persistence.get_active_version()
+        drifted_vals = dict(active_ver.values)
+        drifted_vals["system.log_level"] = "CRITICAL"  # Unauthorized mismatch
+
+        drifts = config_control_plane.detect_node_drift(
+            node_id="node_rogue_1",
+            actual_values=drifted_vals,
+            actual_version=active_ver.version
+        )
+        assert len(drifts) > 0 and drifts[0].key == "system.log_level"
+
+        # Resolve drift
+        res_ok = config_control_plane.resolve_drift(drifts[0].drift_id, strategy="FORCE_SYNC")
+        assert res_ok is True
+        print("      [24] Drift Detection & Audit ... PASS (Unauthorized drift detection & remediation tracking verified)")
+    except Exception as e:
+        print(f"      [24] Drift Detection & Audit ... FAIL ({e})")
+
     print("\n" + "=" * 60)
     print("Diagnostics complete.")
     print("=" * 60)

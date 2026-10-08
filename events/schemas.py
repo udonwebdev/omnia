@@ -288,6 +288,58 @@ EVENT_SCHEMAS: Dict[str, Dict[str, Any]] = {
     },
     "replication.state_diverged": {
         "required_fields": ["namespace_id", "local_hash", "remote_hash"]
+    },
+    "config.created": {
+        "required_fields": ["version", "scope", "content_hash", "author"]
+    },
+    "config.validated": {
+        "required_fields": ["version", "key_count", "status"]
+    },
+    "config.staged": {
+        "required_fields": ["version", "scope"]
+    },
+    "config.rollout_started": {
+        "required_fields": ["rollout_id", "version", "strategy", "target_nodes"]
+    },
+    "config.node_activated": {
+        "required_fields": ["node_id", "version", "applied_keys"]
+    },
+    "config.node_failed": {
+        "required_fields": ["node_id", "version", "error"]
+    },
+    "config.rollout_paused": {
+        "required_fields": ["rollout_id", "version", "reason"]
+    },
+    "config.rollout_completed": {
+        "required_fields": ["rollout_id", "version", "strategy"]
+    },
+    "config.rollback_started": {
+        "required_fields": ["rollout_id", "from_version", "to_version", "reason"]
+    },
+    "config.rollback_completed": {
+        "required_fields": ["rollout_id", "restored_version"]
+    },
+    "config.drift_detected": {
+        "required_fields": ["drift_id", "node_id", "key", "expected_version"]
+    },
+    "config.drift_resolved": {
+        "required_fields": ["drift_id", "node_id", "key"]
+    },
+    "config.approval_required": {
+        "required_fields": ["version", "risk_level", "changes"]
+    },
+    # Video Studio Subsystem Events (Module 0)
+    "video_studio.status_changed": {
+        "required_fields": ["old_state", "new_state", "reason"]
+    },
+    "video_studio.job_queued": {
+        "required_fields": ["job_id", "job_type", "project_id"]
+    },
+    "video_studio.job_completed": {
+        "required_fields": ["job_id", "job_type", "duration_ms"]
+    },
+    "video_studio.job_failed": {
+        "required_fields": ["job_id", "job_type", "error_type", "error_message"]
     }
 }
 

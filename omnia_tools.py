@@ -769,6 +769,120 @@ def trigger_state_reconciliation(namespace_id: str) -> str:
     recs = replication_service.list_records(namespace_id)
     return f"Reconciliation executed for namespace '{namespace_id}': {len(recs)} local records evaluated."
 
+# --- Module 24: Distributed Configuration & Control Plane Tools ---
+from config import config_control_plane, RolloutStrategy, ConfigScope
+
+@tool
+def get_config_status() -> str:
+    """Returns telemetry and status of runtime configuration control plane (active version, schemas, rollouts, drift)."""
+    telemetry = config_control_plane.get_telemetry()
+    return json.dumps(telemetry.to_dict(), indent=2)
+
+@tool
+def get_config_value(key: str, node_id: str = "", device_id: str = "") -> str:
+    """Resolves an authoritative configuration parameter according to hierarchical precedence (DEVICE > NODE > CLUSTER > GLOBAL)."""
+    val = config_control_plane.resolve_effective_value(
+        key=key,
+        node_id=node_id if node_id else None,
+        device_id=device_id if device_id else None
+    )
+    schema = config_control_plane.get_schema(key)
+    is_masked = schema.is_secret if schema else (isinstance(val, str) and val.startswith("secret://"))
+    display = "[SECRET_MASKED]" if is_masked else val
+    return json.dumps({"key": key, "effective_value": display})
+
+@tool
+def propose_config_change(changes_json: str, justification: str = "", parent_version: int = 0) -> str:
+    """Proposes and stages a configuration version with optimistic concurrency and validation checks."""
+    try:
+        changes = json.loads(changes_json)
+    except Exception as e:
+        return f"INVALID_JSON: {e}"
+
+    p_ver = parent_version if parent_version > 0 else None
+    ok, new_ver, errors = config_control_plane.propose_version(
+        values=changes,
+        author="operator_tool",
+        justification=justification or "Operator proposed configuration modification",
+        parent_version=p_ver
+    )
+    if not ok:
+        return f"PROPOSAL_FAILED: {errors}"
+    return f"PROPOSAL_STAGED: Version {new_ver.version} staged (Hash: {new_ver.content_hash[:8]})."
+
+@tool
+def rollout_config_version(version: int, strategy: str = "ALL_AT_ONCE", batch_size: int = 1, target_nodes_json: str = "[]") -> str:
+    """Activates and rolls out a staged configuration version across cluster nodes."""
+    try:
+        strat = RolloutStrategy(strategy.upper())
+    except Exception:
+        strat = RolloutStrategy.ALL_AT_ONCE
+
+    try:
+        target_nodes = json.loads(target_nodes_json)
+        if not target_nodes:
+            target_nodes = ["local_node"]
+    except Exception:
+        target_nodes = ["local_node"]
+
+    ok, rollout, msg = config_control_plane.activate_version(
+        version_num=version,
+        target_nodes=target_nodes,
+        strategy=strat,
+        batch_size=batch_size
+    )
+    return f"ROLLOUT_RESULT: success={ok}, message='{msg}', rollout_id='{rollout.rollout_id if rollout else None}'"
+
+@tool
+def rollback_config_version(current_version: int, target_version: int = 0, reason: str = "Operator request", target_nodes_json: str = "[]") -> str:
+    """Atomically rolls back the cluster configuration to a prior version."""
+    t_ver = target_version if target_version > 0 else None
+    try:
+        target_nodes = json.loads(target_nodes_json)
+        if not target_nodes:
+            target_nodes = ["local_node"]
+    except Exception:
+        target_nodes = ["local_node"]
+
+    ok, target_obj, msg = config_control_plane.rollback_version(
+        current_version_num=current_version,
+        target_version_num=t_ver,
+        reason=reason,
+        target_nodes=target_nodes
+    )
+    return f"ROLLBACK_RESULT: success={ok}, target_version={target_obj.version if target_obj else None}, message='{msg}'"
+
+@tool
+def detect_config_drift(node_id: str, actual_values_json: str, actual_version: int = 0) -> str:
+    """Inspects a node's active runtime parameters against cluster authority to detect configuration drift."""
+    try:
+        actual_vals = json.loads(actual_values_json)
+    except Exception as e:
+        return f"INVALID_JSON: {e}"
+
+    drifts = config_control_plane.detect_node_drift(
+        node_id=node_id,
+        actual_values=actual_vals,
+        actual_version=actual_version
+    )
+    return json.dumps([d.to_dict() for d in drifts], indent=2)
+
+@tool
+def diff_config_versions(base_version: int, target_version: int) -> str:
+    """Renders a formatted diff between two configuration versions with secrets masked."""
+    base_obj = config_control_plane.persistence.get_version(base_version)
+    target_obj = config_control_plane.persistence.get_version(target_version)
+    if not base_obj or not target_obj:
+        return f"ERROR: Version not found. base={base_version if base_obj else 'MISSING'}, target={target_version if target_obj else 'MISSING'}"
+
+    changes = config_control_plane.diff_engine.compute_diff(
+        old_values=base_obj.values,
+        new_values=target_obj.values,
+        schemas=config_control_plane._schemas
+    )
+    return config_control_plane.diff_engine.format_diff_report(changes, mask_secrets=True)
+
+
 
 
 OMNIA_ALL_TOOLS = [
@@ -827,6 +941,13 @@ OMNIA_ALL_TOOLS = [
     get_replication_status,
     list_replication_namespaces,
     trigger_state_reconciliation,
+    get_config_status,
+    get_config_value,
+    propose_config_change,
+    rollout_config_version,
+    rollback_config_version,
+    detect_config_drift,
+    diff_config_versions,
 ]
 
 # Backward compatibility alias
