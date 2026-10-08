@@ -484,6 +484,85 @@ def replay_event_trace(correlation_id: str) -> str:
         return f"No events to replay for trace '{correlation_id}'."
     return "\n".join(summary)
 
+@tool
+async def create_autonomous_mission(objective: str, deadline_seconds: float = 3600.0) -> str:
+    """Initializes and supervises a high-level long-running mission.
+    
+    Args:
+        objective: The high-level autonomous goal or operational mission.
+        deadline_seconds: Hard deadline duration in seconds.
+    """
+    from supervisor import autonomous_supervisor
+    mission = await autonomous_supervisor.create_mission(
+        objective=objective,
+        deadline_sec=deadline_seconds
+    )
+    return f"Mission '{mission.mission_id}' created with status '{mission.status.value}' (Deadline: {deadline_seconds}s)."
+
+@tool
+def get_mission_status(mission_id: str) -> str:
+    """Queries real-time supervisory status, progress, and phase of a mission.
+    
+    Args:
+        mission_id: The unique mission identifier.
+    """
+    from supervisor import autonomous_supervisor
+    m = autonomous_supervisor.get_mission(mission_id)
+    if not m:
+        return f"Mission '{mission_id}' not found."
+    return (
+        f"Mission: {m.mission_id} | Objective: '{m.objective}'\n"
+        f"Status: {m.status.value} | Phase: {m.phase.value} | Progress: {m.progress:.1f}%\n"
+        f"Recovery Attempts Used: {m.recovery_attempts_used}/{m.max_recovery_attempts} | Replans: {m.replans_used}/{m.max_replans}"
+    )
+
+@tool
+async def pause_autonomous_mission(mission_id: str, reason: str = "User request") -> str:
+    """Pauses a running autonomous mission safely.
+    
+    Args:
+        mission_id: Unique mission identifier.
+        reason: Reason for pausing.
+    """
+    from supervisor import autonomous_supervisor
+    ok = await autonomous_supervisor.pause_mission(mission_id, reason=reason)
+    return f"Mission '{mission_id}' {'paused' if ok else 'failed to pause'}."
+
+@tool
+async def resume_autonomous_mission(mission_id: str) -> str:
+    """Resumes a paused autonomous mission.
+    
+    Args:
+        mission_id: Unique mission identifier.
+    """
+    from supervisor import autonomous_supervisor
+    ok = await autonomous_supervisor.resume_mission(mission_id)
+    return f"Mission '{mission_id}' {'resumed' if ok else 'failed to resume'}."
+
+@tool
+async def abort_autonomous_mission(mission_id: str, reason: str = "User abort") -> str:
+    """Aborts an active autonomous mission permanently.
+    
+    Args:
+        mission_id: Unique mission identifier.
+        reason: Reason for aborting.
+    """
+    from supervisor import autonomous_supervisor
+    ok = await autonomous_supervisor.abort_mission(mission_id, reason=reason)
+    return f"Mission '{mission_id}' {'aborted' if ok else 'failed to abort'}."
+
+@tool
+def list_active_missions() -> str:
+    """Lists all active and monitored autonomous missions."""
+    from supervisor import autonomous_supervisor
+    missions = autonomous_supervisor.list_missions()
+    if not missions:
+        return "No active missions currently registered in Mission Control."
+    lines = [f"Registered Missions ({len(missions)}):"]
+    for m in missions:
+        lines.append(f"- ID: {m.mission_id} | Goal: '{m.objective[:35]}' | Status: {m.status.value} | Progress: {m.progress:.1f}%")
+    return "\n".join(lines)
+
 OMNIA_ALL_TOOLS = [
     unlock_all_devices,
     play_youtube_video,
@@ -519,6 +598,12 @@ OMNIA_ALL_TOOLS = [
     publish_custom_fabric_event,
     query_event_trace,
     replay_event_trace,
+    create_autonomous_mission,
+    get_mission_status,
+    pause_autonomous_mission,
+    resume_autonomous_mission,
+    abort_autonomous_mission,
+    list_active_missions,
 ]
 
 # Backward compatibility alias

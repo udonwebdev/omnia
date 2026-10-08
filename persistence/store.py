@@ -340,6 +340,23 @@ class TaskPersistenceStore:
         finally:
             conn.close()
 
+    def get_heartbeat(self, task_id: str) -> Optional[TaskHeartbeat]:
+        conn = self._get_connection()
+        try:
+            cursor = conn.cursor()
+            cursor.execute("SELECT * FROM task_heartbeats WHERE task_id = ?", (task_id,))
+            r = cursor.fetchone()
+            if not r:
+                return None
+            return TaskHeartbeat(
+                task_id=r["task_id"],
+                timestamp=r["heartbeat_ts"],
+                current_node_id=r["current_node_id"],
+                process_id=r["process_id"]
+            )
+        finally:
+            conn.close()
+
     def persist_resource_lock(self, resource_id: str, task_id: str):
         conn = self._get_connection()
         try:

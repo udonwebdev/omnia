@@ -105,6 +105,36 @@ EVENT_SCHEMAS: Dict[str, Dict[str, Any]] = {
     },
     "security.approval_required": {
         "required_fields": ["action", "risk_level"]
+    },
+    "mission.started": {
+        "required_fields": ["mission_id", "status"]
+    },
+    "mission.progress": {
+        "required_fields": ["mission_id", "status", "decision"]
+    },
+    "mission.degraded": {
+        "required_fields": ["mission_id", "status"]
+    },
+    "mission.stalled": {
+        "required_fields": ["mission_id", "status"]
+    },
+    "mission.recovery_started": {
+        "required_fields": ["mission_id", "status", "decision"]
+    },
+    "mission.replanned": {
+        "required_fields": ["mission_id", "status", "decision"]
+    },
+    "mission.approval_required": {
+        "required_fields": ["mission_id", "status", "decision"]
+    },
+    "mission.aborted": {
+        "required_fields": ["mission_id", "status"]
+    },
+    "mission.completed": {
+        "required_fields": ["mission_id", "status"]
+    },
+    "mission.failed": {
+        "required_fields": ["mission_id", "status"]
     }
 }
 

@@ -453,6 +453,115 @@ async def run_diagnostics():
     except Exception as e:
         print(f"      [18] HUD Bus Gateway Hook ..... FAIL ({e})")
 
+    # ---------------------------------------------------------
+    # 11. MODULE 19: AUTONOMOUS SUPERVISOR & MISSION CONTROL
+    # ---------------------------------------------------------
+    print("\n[11/11] Checking Module 19: Autonomous Supervisor & Mission Control...")
+    from supervisor import (
+        autonomous_supervisor,
+        Mission,
+        MissionState,
+        SupervisoryDecisionType,
+        DecisionConfidence,
+        DecisionUrgency,
+        heartbeat_monitor,
+        resource_supervisor,
+        state_reconciler
+    )
+    from supervisor.models import StallClassification, ResourcePressure
+
+    # 11a. Mission Model & Validated Lifecycle Transitions
+    try:
+        m = Mission(mission_id="diag_msn_1", objective="Diagnostic Mission", status=MissionState.CREATED)
+        assert m.can_transition_to(MissionState.RUNNING) is True
+        m.transition_to(MissionState.RUNNING)
+        assert m.can_transition_to(MissionState.COMPLETED) is True
+        m.transition_to(MissionState.COMPLETED)
+        # Terminal state cannot transition to RUNNING
+        assert m.can_transition_to(MissionState.RUNNING) is False
+        print("      [19] Mission Lifecycle Model ... PASS (Strict transition validation enforced)")
+    except Exception as e:
+        print(f"      [19] Mission Lifecycle Model ... FAIL ({e})")
+
+    # 11b. Heartbeat & Stall / Loop Detection
+    try:
+        hb_id = "diag_hb_test"
+        heartbeat_monitor.register_mission(hb_id)
+        heartbeat_monitor.record_progress(hb_id, "TEST_STEP_1")
+        stall_class, _, _ = heartbeat_monitor.assess_stall(hb_id)
+        assert stall_class == StallClassification.ACTIVE
+
+        # Test loop detection
+        for _ in range(2):
+            heartbeat_monitor.record_heartbeat(hb_id, "A", current_node_id="node_A")
+            heartbeat_monitor.record_heartbeat(hb_id, "B", current_node_id="node_B")
+        is_loop, _ = heartbeat_monitor.check_loop_or_oscillation(hb_id)
+        assert is_loop is True
+        heartbeat_monitor.cleanup(hb_id)
+        print("      [19] Heartbeat & Stall/Loop .... PASS (Liveness, progress & oscillation detected)")
+    except Exception as e:
+        print(f"      [19] Heartbeat & Stall/Loop .... FAIL ({e})")
+
+    # 11c. Resource Pressure & Deadlock Cycle Detection
+    try:
+        pressure, metrics = resource_supervisor.get_system_resource_pressure()
+        assert pressure in {ResourcePressure.NORMAL, ResourcePressure.ELEVATED, ResourcePressure.HIGH, ResourcePressure.CRITICAL}
+        
+        # Test wait-for graph cycle detection
+        resource_supervisor.clear()
+        resource_supervisor.register_task_priority("t1", 1)
+        resource_supervisor.register_task_priority("t2", 5)
+        resource_supervisor.record_resource_acquired("t1", "rA")
+        resource_supervisor.record_resource_waiting("t1", "rB")
+        resource_supervisor.record_resource_acquired("t2", "rB")
+        resource_supervisor.record_resource_waiting("t2", "rA")
+        is_dl, cycle, victim = resource_supervisor.detect_deadlock()
+        assert is_dl is True and victim == "t1"
+        resource_supervisor.clear()
+        print("      [19] Deadlock & Pressure Monitor PASS (Resource cycles detected & victim prioritized)")
+    except Exception as e:
+        print(f"      [19] Deadlock & Pressure Monitor FAIL ({e})")
+
+    # 11d. State Reconciler & Crash Consistency
+    try:
+        from persistence.store import persistence_store
+        from persistence.models import PersistedTaskRecord
+        t_crashed = "diag_task_reconcile"
+        persistence_store.save_task(PersistedTaskRecord(
+            task_id=t_crashed,
+            goal="Crash verification",
+            status="RUNNING",
+            current_node_id="step_2",
+            created_at=time.time() - 100,
+            started_at=time.time() - 90,
+            updated_at=time.time() - 80,
+            completed_at=None,
+            deadline_ts=time.time() + 3600,
+            task_timeout_sec=3600
+        ))
+        m_crash = Mission(mission_id="diag_msn_crash", active_task_id=t_crashed, status=MissionState.RUNNING)
+        rec_state = state_reconciler.reconcile_mission_on_startup(m_crash)
+        assert rec_state == MissionState.RECOVERING
+        print("      [19] State Reconciler .......... PASS (Crashed RUNNING task safely reconciled)")
+    except Exception as e:
+        print(f"      [19] State Reconciler .......... FAIL ({e})")
+
+    # 11e. Autonomous Supervisor Engine & Decision Model
+    try:
+        test_m = await autonomous_supervisor.create_mission("Engine Diagnostic Check")
+        dec = await autonomous_supervisor._record_and_publish_decision(
+            test_m,
+            SupervisoryDecisionType.CONTINUE,
+            "Healthy operation verified",
+            {"health": "HEALTHY"},
+            confidence=DecisionConfidence.HIGH
+        )
+        assert dec.decision == SupervisoryDecisionType.CONTINUE
+        await autonomous_supervisor.abort_mission(test_m.mission_id, reason="Diagnostic complete")
+        print("      [19] Mission Control Engine .... PASS (Evidence-backed decisions & controls verified)")
+    except Exception as e:
+        print(f"      [19] Mission Control Engine .... FAIL ({e})")
+
     print("\n" + "=" * 60)
     print("Diagnostics complete.")
     print("=" * 60)
