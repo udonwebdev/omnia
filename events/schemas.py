@@ -377,6 +377,49 @@ EVENT_SCHEMAS: Dict[str, Dict[str, Any]] = {
     },
     "secret.provider_health_changed": {
         "required_fields": ["provider_id", "old_health", "new_health"]
+    },
+    # External Integration & Connector Gateway Events (Module 26)
+    "connector.registered": {
+        "required_fields": ["connector_id", "provider_id", "version"]
+    },
+    "connector.ready": {
+        "required_fields": ["instance_id", "connector_id", "environment"]
+    },
+    "connector.degraded": {
+        "required_fields": ["instance_id", "connector_id", "reason"]
+    },
+    "connector.unavailable": {
+        "required_fields": ["instance_id", "connector_id", "reason"]
+    },
+    "connector.failed": {
+        "required_fields": ["instance_id", "connector_id", "error"]
+    },
+    "connector.request.started": {
+        "required_fields": ["request_id", "connector_id", "operation_id", "purpose"]
+    },
+    "connector.request.completed": {
+        "required_fields": ["request_id", "connector_id", "operation_id", "status_code", "verification_status"]
+    },
+    "connector.request.failed": {
+        "required_fields": ["request_id", "connector_id", "operation_id", "error_type", "error_message"]
+    },
+    "connector.request.uncertain": {
+        "required_fields": ["request_id", "connector_id", "operation_id", "reason"]
+    },
+    "connector.rate_limited": {
+        "required_fields": ["connector_id", "instance_id", "retry_after_sec"]
+    },
+    "connector.circuit_opened": {
+        "required_fields": ["connector_id", "failure_count", "reason"]
+    },
+    "connector.circuit_closed": {
+        "required_fields": ["connector_id", "probe_latency_ms"]
+    },
+    "connector.webhook.received": {
+        "required_fields": ["webhook_id", "endpoint_path", "payload_bytes"]
+    },
+    "connector.webhook.verified": {
+        "required_fields": ["webhook_id", "provider_id", "event_id", "normalized_type"]
     }
 }
 

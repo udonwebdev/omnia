@@ -89,6 +89,15 @@ DEFAULT_NAMESPACES: Dict[str, StateNamespace] = {
         replication_policy=StateClassification.REPLICATED,
         consistency_policy=ConsistencyPolicy.STRONG,
         sensitivity=StateClassification.AUTHORITATIVE
+    ),
+    # 10. External Connectors & Gateway Metadata (Non-sensitive definitions & status)
+    "connectors": StateNamespace(
+        namespace_id="connectors",
+        name="External Integration Connector Metadata",
+        owner_type="LEADER",
+        replication_policy=StateClassification.REPLICATED,
+        consistency_policy=ConsistencyPolicy.STRONG,
+        sensitivity=StateClassification.AUTHORITATIVE
     )
 }
 

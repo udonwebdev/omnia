@@ -414,5 +414,37 @@ def register_all_builtin_capabilities(registry: CapabilityRegistry = capability_
         health=CapabilityHealth.HEALTHY,
         latency_ms=80.0
     ))
+    # =========================================================
+    # 8. VIDEO STUDIO CAPABILITIES (Module 0 Foundation)
+    # =========================================================
+    registry.register_capability(Capability(
+        id="video_studio.get_status",
+        name="Video Studio Subsystem Status",
+        description="Queries operational readiness, hardware compute, and lifecycle state of optional Video Studio",
+        version="0.1.0",
+        category=CapabilityCategory.VIDEO_STUDIO,
+        input_schema={"type": "object", "properties": {}},
+        output_schema={"type": "object", "properties": {"state": {"type": "string"}, "is_enabled": {"type": "boolean"}}},
+        environment="local",
+        platforms=["windows", "linux", "macos"],
+        required_resources=[],
+        required_permissions=[],
+        risk_level=RiskLevel.READ_ONLY,
+        side_effects=[SideEffectType.READ],
+        reversible=ReversibilityType.REVERSIBLE,
+        idempotent=IdempotencyType.IDEMPOTENT,
+        verification_contract=VerificationContract(mechanism="STATUS_QUERY_SUCCESS"),
+        default_timeout_sec=5.0,
+        health=CapabilityHealth.HEALTHY
+    ))
+    registry.register_provider(CapabilityProvider(
+        provider_id="provider.video_studio.subsystem",
+        capability_id="video_studio.get_status",
+        implementation_ref="video_studio.service.video_studio_service.get_status_summary",
+        version="0.1.0",
+        priority=10,
+        health=CapabilityHealth.HEALTHY,
+        latency_ms=5.0
+    ))
 
     logger.info(f"Registered {len(registry.list_capabilities())} built-in capabilities into registry.")

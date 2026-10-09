@@ -1,4 +1,5 @@
 import httpx
+from typing import Optional, Dict, Any, List
 try:
     from google.antigravity.tools import tool
 except ImportError:
@@ -942,6 +943,13 @@ def get_secrets_telemetry() -> str:
     """Returns safe operational metrics for secrets without revealing sensitive values."""
     telem = secrets_service.get_telemetry()
     return json.dumps(telem.to_dict(), indent=2)
+
+@tool
+def redact_sensitive_text(text: str) -> str:
+    """Redacts known secrets, API keys, tokens, and authorization headers from arbitrary text."""
+    from secrets.redaction import redaction_engine
+    return redaction_engine.redact_text(text)
+
 # --- Video Studio Optional Subsystem (Module 0 & 1) ---
 from video_studio.service import video_studio_service
 from video_studio.registry import video_studio_capability_registry
@@ -1161,6 +1169,469 @@ def generate_contact_sheet(project_id: str, asset_id: str, frame_count: int = 9)
         ]
     }, indent=2)
 
+# --- Module 4: Sequence & Timeline Tools ---
+@tool
+def create_video_sequence(project_id: str, name: str, fps: float = 24.0, width: int = 1920, height: int = 1080) -> str:
+    """Creates a new canonical non-destructive timeline sequence in Video Studio."""
+    from video_studio.timeline_service import timeline_service
+    from video_studio.timeline_models import SequenceSettings
+    settings = SequenceSettings(width=width, height=height, frame_rate=fps)
+    seq = timeline_service.create_sequence(project_id=project_id, name=name, settings=settings)
+    return json.dumps(seq.to_dict(), indent=2)
+
+@tool
+def get_video_sequence(project_id: str, sequence_id: str) -> str:
+    """Retrieves full sequence structure including tracks, clips, markers, and regions."""
+    from video_studio.timeline_service import timeline_service
+    seq = timeline_service.get_sequence(sequence_id)
+    if not seq:
+        return json.dumps({"error": f"Sequence '{sequence_id}' not found."})
+    return json.dumps(seq.to_dict(), indent=2)
+
+@tool
+def add_timeline_clip(
+    project_id: str,
+    sequence_id: str,
+    track_id: str,
+    asset_id: str,
+    start_frame: int = 0,
+    duration_frames: int = 24,
+    source_in_frame: int = 0,
+    name: str = "Clip"
+) -> str:
+    """Places a non-destructive media clip on a timeline track."""
+    from video_studio.timeline_service import timeline_service
+    item = timeline_service.add_clip(
+        sequence_id=sequence_id,
+        track_id=track_id,
+        asset_id=asset_id,
+        name=name,
+        start_frame=start_frame,
+        duration_frames=duration_frames,
+        source_in_frame=source_in_frame,
+    )
+    if not item:
+        return json.dumps({"success": False, "error": f"Failed to place clip on track {track_id}."})
+    return json.dumps({"success": True, "item": item.to_dict()}, indent=2)
+
+@tool
+def add_timeline_marker(project_id: str, sequence_id: str, frame: int, name: str = "Marker", category: str = "GENERAL", color_hex: str = "#00f0ff") -> str:
+    """Adds a marker to a sequence timeline."""
+    from video_studio.timeline_service import timeline_service
+    from video_studio.timeline_models import MarkerCategory
+    cat = MarkerCategory.GENERAL
+    try:
+        cat = MarkerCategory(category.upper())
+    except Exception:
+        pass
+    m = timeline_service.add_marker(sequence_id=sequence_id, frame=frame, name=name, category=cat, color_hex=color_hex)
+    if not m:
+        return json.dumps({"success": False, "error": f"Failed to add marker to {sequence_id}."})
+    return json.dumps({"success": True, "marker": m.to_dict()}, indent=2)
+
+@tool
+def query_timeline_items(project_id: str, sequence_id: str, start_frame: int, end_frame: int) -> str:
+    """Queries all timeline items intersecting a specific frame range."""
+    from video_studio.timeline_service import timeline_service
+    from video_studio.timeline_query import timeline_query_engine
+    seq = timeline_service.get_sequence(sequence_id)
+    if not seq:
+        return json.dumps({"error": f"Sequence '{sequence_id}' not found."})
+    items = timeline_query_engine.get_items_intersecting_range(seq, start_frame, end_frame)
+    return json.dumps([it.to_dict() for it in items], indent=2)
+
+@tool
+def trim_timeline_item(project_id: str, sequence_id: str, item_id: str, trim_type: str, delta_frames: int) -> str:
+    """Trims timeline item start (TRIM_START) or end (TRIM_END) by delta frames."""
+    from video_studio.timeline_service import timeline_service
+    from video_studio.timeline_edit_engine import timeline_edit_engine
+    seq = timeline_service.get_sequence(sequence_id)
+    if not seq:
+        return json.dumps({"success": False, "error": f"Sequence '{sequence_id}' not found."})
+    try:
+        if trim_type.upper() == "START" or trim_type.upper() == "TRIM_START":
+            ok = timeline_edit_engine.trim_start(seq, item_id, delta_frames)
+        else:
+            ok = timeline_edit_engine.trim_end(seq, item_id, delta_frames)
+        return json.dumps({"success": ok, "revision": seq.revision, "duration_frames": seq.duration_frames}, indent=2)
+    except Exception as e:
+        return json.dumps({"success": False, "error": str(e)}, indent=2)
+
+@tool
+def split_timeline_clip(project_id: str, sequence_id: str, item_id: str, split_frame: int) -> str:
+    """Splits (razor cuts) a timeline item at split_frame into two slices."""
+    from video_studio.timeline_service import timeline_service
+    from video_studio.timeline_edit_engine import timeline_edit_engine
+    seq = timeline_service.get_sequence(sequence_id)
+    if not seq:
+        return json.dumps({"success": False, "error": f"Sequence '{sequence_id}' not found."})
+    try:
+        left, right = timeline_edit_engine.split_item(seq, item_id, split_frame)
+        return json.dumps({
+            "success": True,
+            "revision": seq.revision,
+            "left_item": left.to_dict(),
+            "right_item": right.to_dict(),
+        }, indent=2)
+    except Exception as e:
+        return json.dumps({"success": False, "error": str(e)}, indent=2)
+
+@tool
+def move_timeline_clip(project_id: str, sequence_id: str, item_id: str, new_start_frame: int, target_track_id: str = "") -> str:
+    """Moves a timeline clip to a new start frame, optionally moving to a new track."""
+    from video_studio.timeline_service import timeline_service
+    from video_studio.timeline_edit_engine import timeline_edit_engine
+    seq = timeline_service.get_sequence(sequence_id)
+    if not seq:
+        return json.dumps({"success": False, "error": f"Sequence '{sequence_id}' not found."})
+    try:
+        tgt_track = target_track_id if target_track_id else None
+        ok = timeline_edit_engine.move_item(seq, item_id, new_start_frame, target_track_id=tgt_track)
+        return json.dumps({"success": ok, "revision": seq.revision}, indent=2)
+    except Exception as e:
+        return json.dumps({"success": False, "error": str(e)}, indent=2)
+
+@tool
+def set_timeline_clip_enabled(project_id: str, sequence_id: str, item_id: str, is_enabled: bool) -> str:
+    """Toggles active state of a clip on the timeline."""
+    from video_studio.timeline_service import timeline_service
+    from video_studio.timeline_edit_engine import timeline_edit_engine
+    seq = timeline_service.get_sequence(sequence_id)
+    if not seq:
+        return json.dumps({"success": False, "error": f"Sequence '{sequence_id}' not found."})
+    try:
+        ok = timeline_edit_engine.set_item_enabled(seq, item_id, is_enabled)
+        return json.dumps({"success": ok, "revision": seq.revision}, indent=2)
+    except Exception as e:
+        return json.dumps({"success": False, "error": str(e)}, indent=2)
+
+@tool
+def link_timeline_items(project_id: str, sequence_id: str, item_ids_json: str) -> str:
+    """Links multiple timeline items so they move in sync."""
+    from video_studio.timeline_service import timeline_service
+    from video_studio.timeline_edit_engine import timeline_edit_engine
+    seq = timeline_service.get_sequence(sequence_id)
+    if not seq:
+        return json.dumps({"success": False, "error": f"Sequence '{sequence_id}' not found."})
+    try:
+        ids = json.loads(item_ids_json)
+        link_id = timeline_edit_engine.link_items(seq, ids)
+        return json.dumps({"success": True, "link_id": link_id, "revision": seq.revision}, indent=2)
+    except Exception as e:
+        return json.dumps({"success": False, "error": str(e)}, indent=2)
+
+@tool
+def undo_timeline_edit(project_id: str, sequence_id: str) -> str:
+    """Rolls back the most recent timeline edit operation."""
+    from video_studio.timeline_service import timeline_service
+    from video_studio.timeline_edit_engine import timeline_edit_engine
+    seq = timeline_service.get_sequence(sequence_id)
+    if not seq:
+        return json.dumps({"success": False, "error": f"Sequence '{sequence_id}' not found."})
+    ok = timeline_edit_engine.undo(seq)
+    return json.dumps({"success": ok, "revision": seq.revision}, indent=2)
+
+@tool
+def redo_timeline_edit(project_id: str, sequence_id: str) -> str:
+    """Re-applies the most recent undone timeline operation."""
+    from video_studio.timeline_service import timeline_service
+    from video_studio.timeline_edit_engine import timeline_edit_engine
+    seq = timeline_service.get_sequence(sequence_id)
+    if not seq:
+        return json.dumps({"success": False, "error": f"Sequence '{sequence_id}' not found."})
+    ok = timeline_edit_engine.redo(seq)
+    return json.dumps({"success": ok, "revision": seq.revision}, indent=2)
+
+@tool
+def ripple_trim_timeline_item(project_id: str, sequence_id: str, item_id: str, trim_side: str, delta_frames: int, affected_tracks_json: str = "[]", ripple_linked: bool = True) -> str:
+    """Ripple trims an item at start or end, shifting downstream content."""
+    from video_studio.timeline_service import timeline_service
+    from video_studio.timeline_advanced_edit import advanced_timeline_edit_engine
+    seq = timeline_service.get_sequence(sequence_id)
+    if not seq:
+        return json.dumps({"success": False, "error": f"Sequence '{sequence_id}' not found."})
+    try:
+        aff_tracks = json.loads(affected_tracks_json) if affected_tracks_json else None
+        if not aff_tracks:
+            aff_tracks = None
+        if "START" in trim_side.upper():
+            ok = advanced_timeline_edit_engine.ripple_trim_start(seq, item_id, delta_frames, affected_track_ids=aff_tracks, ripple_linked=ripple_linked)
+        else:
+            ok = advanced_timeline_edit_engine.ripple_trim_end(seq, item_id, delta_frames, affected_track_ids=aff_tracks, ripple_linked=ripple_linked)
+        return json.dumps({"success": ok, "revision": seq.revision, "duration_frames": seq.duration_frames}, indent=2)
+    except Exception as e:
+        return json.dumps({"success": False, "error": str(e)}, indent=2)
+
+@tool
+def rolling_edit_timeline(project_id: str, sequence_id: str, prev_item_id: str, next_item_id: str, delta_frames: int, roll_linked: bool = True) -> str:
+    """Performs a rolling edit between two adjacent clips, maintaining combined duration."""
+    from video_studio.timeline_service import timeline_service
+    from video_studio.timeline_advanced_edit import advanced_timeline_edit_engine
+    seq = timeline_service.get_sequence(sequence_id)
+    if not seq:
+        return json.dumps({"success": False, "error": f"Sequence '{sequence_id}' not found."})
+    try:
+        ok = advanced_timeline_edit_engine.rolling_edit(seq, prev_item_id, next_item_id, delta_frames, roll_linked=roll_linked)
+        return json.dumps({"success": ok, "revision": seq.revision}, indent=2)
+    except Exception as e:
+        return json.dumps({"success": False, "error": str(e)}, indent=2)
+
+@tool
+def slip_edit_timeline_clip(project_id: str, sequence_id: str, item_id: str, delta_frames: int, slip_linked: bool = True) -> str:
+    """Slips source media range without altering timeline position or duration."""
+    from video_studio.timeline_service import timeline_service
+    from video_studio.timeline_advanced_edit import advanced_timeline_edit_engine
+    seq = timeline_service.get_sequence(sequence_id)
+    if not seq:
+        return json.dumps({"success": False, "error": f"Sequence '{sequence_id}' not found."})
+    try:
+        ok = advanced_timeline_edit_engine.slip_edit(seq, item_id, delta_frames, slip_linked=slip_linked)
+        return json.dumps({"success": ok, "revision": seq.revision}, indent=2)
+    except Exception as e:
+        return json.dumps({"success": False, "error": str(e)}, indent=2)
+
+@tool
+def slide_edit_timeline_clip(project_id: str, sequence_id: str, item_id: str, delta_frames: int, slide_linked: bool = True) -> str:
+    """Slides an item along timeline while trimming surrounding clips."""
+    from video_studio.timeline_service import timeline_service
+    from video_studio.timeline_advanced_edit import advanced_timeline_edit_engine
+    seq = timeline_service.get_sequence(sequence_id)
+    if not seq:
+        return json.dumps({"success": False, "error": f"Sequence '{sequence_id}' not found."})
+    try:
+        ok = advanced_timeline_edit_engine.slide_edit(seq, item_id, delta_frames, slide_linked=slide_linked)
+        return json.dumps({"success": ok, "revision": seq.revision}, indent=2)
+    except Exception as e:
+        return json.dumps({"success": False, "error": str(e)}, indent=2)
+
+@tool
+def ripple_delete_timeline_clips(project_id: str, sequence_id: str, item_ids_json: str, affected_tracks_json: str = "[]", ripple_linked: bool = True) -> str:
+    """Deletes clips and ripples downstream timeline content leftward."""
+    from video_studio.timeline_service import timeline_service
+    from video_studio.timeline_advanced_edit import advanced_timeline_edit_engine
+    seq = timeline_service.get_sequence(sequence_id)
+    if not seq:
+        return json.dumps({"success": False, "error": f"Sequence '{sequence_id}' not found."})
+    try:
+        ids = json.loads(item_ids_json)
+        aff_tracks = json.loads(affected_tracks_json) if affected_tracks_json else None
+        if not aff_tracks:
+            aff_tracks = None
+        ok = advanced_timeline_edit_engine.ripple_delete(seq, ids, affected_track_ids=aff_tracks, ripple_linked=ripple_linked)
+        return json.dumps({"success": ok, "revision": seq.revision, "duration_frames": seq.duration_frames}, indent=2)
+    except Exception as e:
+        return json.dumps({"success": False, "error": str(e)}, indent=2)
+
+@tool
+def manage_timeline_gaps(project_id: str, sequence_id: str, action: str, track_id: str = "", frame: int = 0, duration_frames: int = 0) -> str:
+    """Detects, closes, or inserts timeline gaps ('DETECT', 'CLOSE', 'INSERT')."""
+    from video_studio.timeline_service import timeline_service
+    from video_studio.timeline_advanced_edit import advanced_timeline_edit_engine
+    seq = timeline_service.get_sequence(sequence_id)
+    if not seq:
+        return json.dumps({"success": False, "error": f"Sequence '{sequence_id}' not found."})
+    try:
+        act = action.upper()
+        if act == "DETECT":
+            gaps = advanced_timeline_edit_engine.detect_gaps(seq, track_id=track_id if track_id else None)
+            return json.dumps({"success": True, "gaps": [g.to_dict() for g in gaps]}, indent=2)
+        elif act == "CLOSE":
+            ok = advanced_timeline_edit_engine.close_gap(seq, track_id, gap_start_frame=frame)
+            return json.dumps({"success": ok, "revision": seq.revision}, indent=2)
+        elif act == "INSERT":
+            ok = advanced_timeline_edit_engine.insert_gap(seq, track_id, insert_frame=frame, duration_frames=duration_frames)
+            return json.dumps({"success": ok, "revision": seq.revision}, indent=2)
+        else:
+            return json.dumps({"success": False, "error": f"Unknown action: {action}"})
+    except Exception as e:
+        return json.dumps({"success": False, "error": str(e)}, indent=2)
+
+
+@tool
+def list_external_connectors() -> str:
+    """Lists all registered external connectors and their operations."""
+    from connectors.service import connector_gateway
+    defs = connector_gateway.list_connectors()
+    res = []
+    for d in defs:
+        res.append({
+            "connector_id": d.connector_id,
+            "provider_id": d.provider_id,
+            "name": d.name,
+            "version": d.version,
+            "operations_count": len(d.operations),
+            "operations": list(d.operations.keys()),
+            "status": d.status.value
+        })
+    return json.dumps(res, indent=2)
+
+@tool
+def get_connector_definition(connector_id: str) -> str:
+    """Retrieves full specification and operations for an external connector."""
+    from connectors.service import connector_gateway
+    d = connector_gateway.get_connector(connector_id)
+    if not d:
+        return json.dumps({"error": f"Connector '{connector_id}' not found."})
+    return json.dumps({
+        "connector_id": d.connector_id,
+        "provider_id": d.provider_id,
+        "name": d.name,
+        "version": d.version,
+        "description": d.description,
+        "risk_profile": d.risk_profile,
+        "operations": {
+            op_id: {
+                "name": op.name,
+                "type": op.operation_type.value,
+                "path": op.path,
+                "method": op.method,
+                "risk_level": op.risk_level,
+                "idempotent": op.idempotent,
+                "requires_approval": op.requires_approval
+            }
+            for op_id, op in d.operations.items()
+        }
+    }, indent=2)
+
+@tool
+def create_connector_instance(
+    instance_id: str,
+    connector_id: str,
+    base_url: str,
+    environment: str = "SANDBOX",
+    credential_reference: str = ""
+) -> str:
+    """Creates a configured instance of an external connector."""
+    from connectors.service import connector_gateway
+    from connectors.models import Environment
+    try:
+        env_enum = Environment(environment.upper())
+    except ValueError:
+        env_enum = Environment.SANDBOX
+
+    inst = connector_gateway.create_instance(
+        instance_id=instance_id,
+        connector_id=connector_id,
+        base_url=base_url,
+        environment=env_enum,
+        credential_reference=credential_reference if credential_reference else None
+    )
+    return json.dumps({
+        "success": True,
+        "instance_id": inst.instance_id,
+        "connector_id": inst.connector_id,
+        "environment": inst.environment.value,
+        "base_url": inst.base_url,
+        "status": inst.status.value
+    }, indent=2)
+
+@tool
+def execute_connector_operation(
+    operation_id: str,
+    instance_id: str,
+    parameters_json: str = "{}",
+    idempotency_key: str = ""
+) -> str:
+    """Executes a typed operation on an external connector instance within safety boundaries."""
+    import asyncio
+    from connectors.service import connector_gateway
+    from connectors.models import ConnectorRequest, RequestContext
+    try:
+        params = json.loads(parameters_json) if parameters_json else {}
+    except Exception as e:
+        return json.dumps({"error": f"Invalid parameters JSON: {e}"})
+
+    ctx = RequestContext(
+        purpose="tool_execution",
+        idempotency_key=idempotency_key if idempotency_key else None
+    )
+    req = ConnectorRequest(
+        operation_id=operation_id,
+        instance_id=instance_id,
+        context=ctx,
+        parameters=params
+    )
+
+    try:
+        loop = asyncio.get_event_loop()
+        if loop.is_running():
+            import concurrent.futures
+            with concurrent.futures.ThreadPoolExecutor() as pool:
+                resp = pool.submit(asyncio.run, connector_gateway.execute(req)).result()
+        else:
+            resp = loop.run_until_complete(connector_gateway.execute(req))
+    except RuntimeError:
+        resp = asyncio.run(connector_gateway.execute(req))
+    except Exception as exc:
+        return json.dumps({"error": f"Execution failed: {exc}"})
+
+    return json.dumps({
+        "request_id": resp.request_id,
+        "operation_id": resp.operation_id,
+        "status_code": resp.status_code,
+        "verification_status": resp.verification_status.value,
+        "body": resp.body,
+        "error_type": resp.error_type,
+        "error_message": resp.error_message,
+        "latency_ms": round(resp.latency_ms, 2),
+        "cached_idempotent": resp.cached_idempotent
+    }, indent=2)
+
+@tool
+def check_connector_health(instance_id: str) -> str:
+    """Checks operational health of a connector instance."""
+    import asyncio
+    from connectors.service import connector_gateway
+    try:
+        h = asyncio.run(connector_gateway.check_health(instance_id))
+        return json.dumps({"instance_id": instance_id, "health": h.value}, indent=2)
+    except Exception as e:
+        return json.dumps({"error": str(e)})
+
+@tool
+def reset_connector_circuit(connector_id: str) -> str:
+    """Resets the circuit breaker for a connector back to CLOSED."""
+    from connectors.circuit_breaker import circuit_breaker_registry
+    breaker = circuit_breaker_registry.get_breaker(connector_id)
+    breaker.reset()
+    return json.dumps({"success": True, "connector_id": connector_id, "state": breaker.state.value})
+
+@tool
+def process_inbound_webhook(endpoint_path: str, headers_json: str, body_text: str) -> str:
+    """Processes an inbound webhook with signature verification and replay defense."""
+    import asyncio
+    from connectors.webhooks import webhook_gateway
+    try:
+        headers = json.loads(headers_json) if headers_json else {}
+    except Exception as e:
+        return json.dumps({"error": f"Invalid headers JSON: {e}"})
+
+    raw_body = body_text.encode("utf-8") if isinstance(body_text, str) else b""
+    ok, evt, reason = asyncio.run(webhook_gateway.process_webhook(endpoint_path, headers, raw_body))
+    return json.dumps({
+        "success": ok,
+        "reason": reason,
+        "event_id": evt.event_id if evt else None,
+        "provider_id": evt.provider_id if evt else None,
+        "normalized_type": evt.normalized_type if evt else None
+    }, indent=2)
+
+@tool
+def get_connector_telemetry() -> str:
+    """Returns gateway aggregate telemetry metrics."""
+    from connectors.service import connector_gateway
+    t = connector_gateway.telemetry
+    return json.dumps({
+        "request_count": t.request_count,
+        "success_count": t.success_count,
+        "failure_count": t.failure_count,
+        "uncertain_count": t.uncertain_count,
+        "retry_count": t.retry_count,
+        "rate_limit_count": t.rate_limit_count,
+        "circuit_open_count": t.circuit_open_count,
+        "webhook_count": t.webhooks.persistence is not None
+    }, indent=2)
+
 
 OMNIA_ALL_TOOLS = [
     unlock_all_devices,
@@ -1233,6 +1704,14 @@ OMNIA_ALL_TOOLS = [
     mark_secret_compromised,
     get_secrets_telemetry,
     redact_sensitive_text,
+    list_external_connectors,
+    get_connector_definition,
+    create_connector_instance,
+    execute_connector_operation,
+    check_connector_health,
+    reset_connector_circuit,
+    process_inbound_webhook,
+    get_connector_telemetry,
     get_video_studio_status,
     list_video_studio_capabilities,
     check_video_studio_capability,
@@ -1241,6 +1720,28 @@ OMNIA_ALL_TOOLS = [
     list_media_assets,
     create_media_bin,
     search_media_assets,
+    analyze_media_asset,
+    get_asset_thumbnail,
+    get_asset_waveform,
+    generate_contact_sheet,
+    create_video_sequence,
+    get_video_sequence,
+    add_timeline_clip,
+    add_timeline_marker,
+    query_timeline_items,
+    trim_timeline_item,
+    split_timeline_clip,
+    move_timeline_clip,
+    set_timeline_clip_enabled,
+    link_timeline_items,
+    undo_timeline_edit,
+    redo_timeline_edit,
+    ripple_trim_timeline_item,
+    rolling_edit_timeline,
+    slip_edit_timeline_clip,
+    slide_edit_timeline_clip,
+    ripple_delete_timeline_clips,
+    manage_timeline_gaps,
 ]
 
 # Backward compatibility alias

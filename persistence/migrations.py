@@ -7,7 +7,7 @@ from typing import List, Tuple
 
 logger = logging.getLogger("Omnia.Persistence.Migrations")
 
-CURRENT_SCHEMA_VERSION = 7
+CURRENT_SCHEMA_VERSION = 8
 
 MIGRATION_V1 = """
 -- Schema Version 1: Durable Task Graph & Crash Recovery Tables
@@ -642,6 +642,106 @@ CREATE INDEX IF NOT EXISTS idx_secret_audit_time ON secret_audit_log(timestamp);
 CREATE INDEX IF NOT EXISTS idx_secret_audit_action ON secret_audit_log(action);
 """
 
+MIGRATION_V8 = """
+-- Schema Version 8: External Integration & Connector Gateway Tables
+
+CREATE TABLE IF NOT EXISTS connector_definitions (
+    connector_id TEXT PRIMARY KEY,
+    provider_id TEXT NOT NULL,
+    name TEXT NOT NULL,
+    version TEXT NOT NULL,
+    description TEXT NOT NULL,
+    supported_protocols TEXT NOT NULL DEFAULT '["HTTP"]',
+    risk_profile TEXT NOT NULL DEFAULT 'MEDIUM',
+    schema_version TEXT NOT NULL DEFAULT '1.0.0',
+    operations_json TEXT NOT NULL DEFAULT '{}',
+    auth_requirements_json TEXT NOT NULL DEFAULT '{}',
+    rate_limit_policy_json TEXT NOT NULL DEFAULT '{}',
+    retry_policy_json TEXT NOT NULL DEFAULT '{}',
+    timeout_policy_json TEXT NOT NULL DEFAULT '{}',
+    status TEXT NOT NULL DEFAULT 'REGISTERED',
+    created_at REAL NOT NULL,
+    updated_at REAL NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_conn_def_provider ON connector_definitions(provider_id);
+CREATE INDEX IF NOT EXISTS idx_conn_def_status ON connector_definitions(status);
+
+CREATE TABLE IF NOT EXISTS connector_instances (
+    instance_id TEXT PRIMARY KEY,
+    connector_id TEXT NOT NULL,
+    environment TEXT NOT NULL DEFAULT 'SANDBOX',
+    base_url TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'INITIALIZING',
+    credential_reference TEXT,
+    config_reference TEXT,
+    health TEXT NOT NULL DEFAULT 'UNKNOWN',
+    health_message TEXT,
+    last_health_check REAL,
+    created_at REAL NOT NULL,
+    updated_at REAL NOT NULL,
+    FOREIGN KEY (connector_id) REFERENCES connector_definitions(connector_id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_conn_inst_conn ON connector_instances(connector_id);
+CREATE INDEX IF NOT EXISTS idx_conn_inst_env ON connector_instances(environment);
+CREATE INDEX IF NOT EXISTS idx_conn_inst_status ON connector_instances(status);
+CREATE INDEX IF NOT EXISTS idx_conn_inst_health ON connector_instances(health);
+
+CREATE TABLE IF NOT EXISTS connector_idempotency (
+    idempotency_key TEXT PRIMARY KEY,
+    operation_id TEXT NOT NULL,
+    instance_id TEXT NOT NULL,
+    task_id TEXT,
+    status TEXT NOT NULL,
+    request_hash TEXT NOT NULL,
+    response_payload TEXT,
+    created_at REAL NOT NULL,
+    expires_at REAL NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_conn_idemp_op ON connector_idempotency(operation_id);
+CREATE INDEX IF NOT EXISTS idx_conn_idemp_expires ON connector_idempotency(expires_at);
+
+CREATE TABLE IF NOT EXISTS connector_webhooks (
+    webhook_id TEXT PRIMARY KEY,
+    endpoint_path TEXT NOT NULL UNIQUE,
+    provider_id TEXT NOT NULL,
+    secret_reference TEXT,
+    status TEXT NOT NULL DEFAULT 'ACTIVE',
+    verification_algorithm TEXT NOT NULL DEFAULT 'HMAC_SHA256',
+    max_payload_bytes INTEGER NOT NULL DEFAULT 1048576,
+    replay_window_sec REAL NOT NULL DEFAULT 300.0,
+    created_at REAL NOT NULL,
+    last_event_at REAL
+);
+
+CREATE INDEX IF NOT EXISTS idx_conn_webhook_provider ON connector_webhooks(provider_id);
+
+CREATE TABLE IF NOT EXISTS connector_webhook_events (
+    event_id TEXT PRIMARY KEY,
+    webhook_id TEXT NOT NULL,
+    provider_event_id TEXT NOT NULL,
+    signature_verified INTEGER NOT NULL DEFAULT 0,
+    normalized_type TEXT NOT NULL,
+    received_at REAL NOT NULL,
+    FOREIGN KEY (webhook_id) REFERENCES connector_webhooks(webhook_id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_conn_wevt_wh ON connector_webhook_events(webhook_id);
+CREATE INDEX IF NOT EXISTS idx_conn_wevt_prov_id ON connector_webhook_events(provider_event_id);
+
+CREATE TABLE IF NOT EXISTS connector_circuit_state (
+    connector_id TEXT PRIMARY KEY,
+    state TEXT NOT NULL DEFAULT 'CLOSED',
+    failure_count INTEGER NOT NULL DEFAULT 0,
+    success_count INTEGER NOT NULL DEFAULT 0,
+    last_failure_time REAL,
+    last_state_change REAL NOT NULL,
+    half_open_probe_in_flight INTEGER NOT NULL DEFAULT 0
+);
+"""
+
 def backup_database(db_path: str, backup_dir: str = "persistence_backups") -> str:
     """Creates a timestamped snapshot of the SQLite database prior to any schema modification."""
     if not os.path.exists(db_path):
@@ -752,6 +852,17 @@ def apply_migrations(db_path: str) -> int:
             conn.commit()
             logger.info("Migration v7 applied successfully.")
             current_version = 7
+
+        if current_version < 8:
+            logger.info("Applying Migration v8 (External Integration & Connector Gateway Tables)...")
+            cursor.executescript(MIGRATION_V8)
+            cursor.execute(
+                "INSERT INTO schema_migrations (version, applied_at, description) VALUES (?, ?, ?)",
+                (8, time.time(), "External Integration and Connector Gateway tables")
+            )
+            conn.commit()
+            logger.info("Migration v8 applied successfully.")
+            current_version = 8
 
         return current_version
     except Exception as e:

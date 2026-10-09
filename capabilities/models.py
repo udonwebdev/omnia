@@ -14,6 +14,8 @@ class CapabilityCategory(Enum):
     SYSTEM = "SYSTEM"
     MEMORY = "MEMORY"
     ORCHESTRATION = "ORCHESTRATION"
+    VIDEO_STUDIO = "VIDEO_STUDIO"
+    CONNECTOR = "CONNECTOR"
 
 class CapabilityHealth(Enum):
     UNKNOWN = "UNKNOWN"
