@@ -1625,6 +1625,77 @@ async def run_diagnostics():
         traceback.print_exc()
         print(f"      [30] Knowledge Graph Engine .... FAIL ({e})")
 
+    # 23. Module 31: Temporal Knowledge & Causal State Engine
+    print("\n[23/23] Checking Module 31: Temporal Knowledge & Causal State Engine...")
+    from temporal import (
+        temporal_causal_service,
+        CausalRelationType,
+        CausalStatus,
+    )
+    from datetime import datetime, timezone, timedelta
+
+    try:
+        # 23a. Bi-temporal State Recording & Point-in-time Reconstruction
+        t_base = datetime.now(timezone.utc)
+        t_past1 = t_base - timedelta(hours=3)
+        t_past2 = t_base - timedelta(hours=2)
+        t_past3 = t_base - timedelta(hours=1)
+
+        rec_old = temporal_causal_service.record_state(
+            entity_id="node_db_primary",
+            state_payload={"status": "PRIMARY", "connections": 120},
+            valid_from=t_past1,
+            valid_until=t_past2,
+        )
+        rec_new = temporal_causal_service.record_state(
+            entity_id="node_db_primary",
+            state_payload={"status": "FAILING_OVER", "connections": 12},
+            valid_from=t_past2,
+            valid_until=None,
+        )
+        assert rec_old is not None and rec_new is not None
+
+        # Point in time query (as_of)
+        as_of_mid = t_base - timedelta(minutes=150)
+        reconstructed = temporal_causal_service.reconstruct_state("node_db_primary", valid_time=as_of_mid)
+        assert reconstructed is not None
+        assert reconstructed.state_payload.get("status") == "PRIMARY"
+        print("      [31] Bi-temporal State & As-Of . PASS (Valid-time state tracking & point-in-time reconstruction)")
+
+        # 23b. State Transition Diff Detection
+        transitions = temporal_causal_service.detect_state_transitions("node_db_primary")
+        assert len(transitions) >= 1
+        assert "status" in transitions[0].changed_keys
+        print("      [31] State Transition Diffing .. PASS (Temporal intervals diffed & property shifts detected)")
+
+        # 23c. Causal Link Assertion & Root Cause Tracing
+        c_link = temporal_causal_service.assert_causal_link(
+            cause_entity_id="disk_io_saturation",
+            effect_entity_id="node_db_primary",
+            relation_type="RESULTED_IN",
+            confidence=0.96,
+            evidence_ids=["ev_io_spike_01"],
+            mechanism_description="Queue length exceeded 500ms causing failover."
+        )
+        assert c_link is not None
+        assert c_link.causal_link_id is not None
+
+        # Backward root cause trace
+        chain = temporal_causal_service.trace_causal_chain(
+            entity_id="node_db_primary",
+            direction="ROOT_CAUSE",
+            max_depth=3
+        )
+        assert chain.root_entity_id == "node_db_primary"
+        assert len(chain.nodes) >= 1
+        assert any(n.entity_id == "disk_io_saturation" for n in chain.nodes)
+        print("      [31] Causal Link & Root Cause .. PASS (Evidence-backed links & recursive causal traversal)")
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        print(f"      [31] Temporal Causal Engine .... FAIL ({e})")
+
     print("\n" + "=" * 60)
     print("Diagnostics complete.")
     print("=" * 60)

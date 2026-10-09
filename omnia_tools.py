@@ -2000,6 +2000,98 @@ def resolve_entity_candidates(auto_merge_threshold: float = 0.85) -> str:
         return json.dumps({"success": False, "error": str(e)}, indent=2)
 
 
+# --- Module 31: Temporal Knowledge & Causal State Engine Tools ---
+@tool
+def record_temporal_entity_state(
+    entity_id: str,
+    state_payload_json: str,
+    valid_from: str = "",
+    valid_until: str = ""
+) -> str:
+    """Records a bi-temporal state snapshot for an entity with valid time and transaction time."""
+    from temporal.service import temporal_causal_service
+    from datetime import datetime
+    try:
+        payload = json.loads(state_payload_json) if isinstance(state_payload_json, str) else state_payload_json
+        v_from = datetime.fromisoformat(valid_from) if valid_from else None
+        v_until = datetime.fromisoformat(valid_until) if valid_until else None
+        record = temporal_causal_service.record_state(
+            entity_id=entity_id,
+            state_payload=payload,
+            valid_from=v_from,
+            valid_until=v_until,
+        )
+        return json.dumps(record.to_dict(), indent=2)
+    except Exception as e:
+        return json.dumps({"success": False, "error": str(e)}, indent=2)
+
+@tool
+def reconstruct_temporal_state(
+    entity_id: str,
+    valid_time: str,
+    transaction_time: str = ""
+) -> str:
+    """Reconstructs what was true for an entity at a specific point in time (as_of bi-temporal query)."""
+    from temporal.service import temporal_causal_service
+    from datetime import datetime
+    try:
+        vt = datetime.fromisoformat(valid_time)
+        tt = datetime.fromisoformat(transaction_time) if transaction_time else None
+        record = temporal_causal_service.reconstruct_state(
+            entity_id=entity_id,
+            valid_time=vt,
+            transaction_time=tt,
+        )
+        if not record:
+            return json.dumps({"found": False, "entity_id": entity_id, "state": None}, indent=2)
+        return json.dumps({"found": True, "record": record.to_dict()}, indent=2)
+    except Exception as e:
+        return json.dumps({"success": False, "error": str(e)}, indent=2)
+
+@tool
+def assert_causal_link(
+    cause_entity_id: str,
+    effect_entity_id: str,
+    relation_type: str = "RESULTED_IN",
+    confidence: float = 1.0,
+    evidence_ids_json: str = "[]",
+    mechanism_description: str = ""
+) -> str:
+    """Asserts a typed causal relationship between two entities or events backed by evidence."""
+    from temporal.service import temporal_causal_service
+    try:
+        ev_ids = json.loads(evidence_ids_json) if isinstance(evidence_ids_json, str) else evidence_ids_json
+        link = temporal_causal_service.assert_causal_link(
+            cause_entity_id=cause_entity_id,
+            effect_entity_id=effect_entity_id,
+            relation_type=relation_type,
+            confidence=confidence,
+            evidence_ids=ev_ids,
+            mechanism_description=mechanism_description or None,
+        )
+        return json.dumps(link.to_dict(), indent=2)
+    except Exception as e:
+        return json.dumps({"success": False, "error": str(e)}, indent=2)
+
+@tool
+def trace_causal_chain(
+    entity_id: str,
+    direction: str = "ROOT_CAUSE",
+    max_depth: int = 5
+) -> str:
+    """Traces a causal graph either backward for root cause analysis or forward for consequence blast radius."""
+    from temporal.service import temporal_causal_service
+    try:
+        chain = temporal_causal_service.trace_causal_chain(
+            entity_id=entity_id,
+            direction=direction,
+            max_depth=max_depth,
+        )
+        return json.dumps(chain.to_dict(), indent=2)
+    except Exception as e:
+        return json.dumps({"success": False, "error": str(e)}, indent=2)
+
+
 OMNIA_ALL_TOOLS = [
     unlock_all_devices,
     play_youtube_video,
@@ -2130,6 +2222,10 @@ OMNIA_ALL_TOOLS = [
     assert_knowledge_relationship,
     query_knowledge_graph,
     resolve_entity_candidates,
+    record_temporal_entity_state,
+    reconstruct_temporal_state,
+    assert_causal_link,
+    trace_causal_chain,
 ]
 
 # Backward compatibility alias

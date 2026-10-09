@@ -7,7 +7,7 @@ from typing import List, Tuple
 
 logger = logging.getLogger("Omnia.Persistence.Migrations")
 
-CURRENT_SCHEMA_VERSION = 12
+CURRENT_SCHEMA_VERSION = 13
 
 MIGRATION_V1 = """
 -- Schema Version 1: Durable Task Graph & Crash Recovery Tables
@@ -1061,6 +1061,61 @@ CREATE INDEX IF NOT EXISTS idx_erc_pair ON entity_resolution_candidates(source_e
 CREATE INDEX IF NOT EXISTS idx_erc_status ON entity_resolution_candidates(status);
 """
 
+MIGRATION_V13 = """
+-- Schema Version 13: Temporal Knowledge & Causal State Engine
+
+CREATE TABLE IF NOT EXISTS temporal_entity_states (
+    state_id TEXT PRIMARY KEY,
+    entity_id TEXT NOT NULL,
+    valid_from REAL NOT NULL,
+    valid_until REAL,
+    transaction_time REAL NOT NULL,
+    recorded_by TEXT NOT NULL DEFAULT 'system',
+    state_payload_json TEXT NOT NULL DEFAULT '{}',
+    is_deleted INTEGER NOT NULL DEFAULT 0,
+    evidence_id TEXT,
+    created_at REAL NOT NULL,
+    FOREIGN KEY (entity_id) REFERENCES knowledge_entities(entity_id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_tes_entity ON temporal_entity_states(entity_id);
+CREATE INDEX IF NOT EXISTS idx_tes_valid ON temporal_entity_states(valid_from, valid_until);
+CREATE INDEX IF NOT EXISTS idx_tes_tx ON temporal_entity_states(transaction_time);
+
+CREATE TABLE IF NOT EXISTS causal_links (
+    causal_link_id TEXT PRIMARY KEY,
+    cause_entity_id TEXT NOT NULL,
+    effect_entity_id TEXT NOT NULL,
+    relation_type TEXT NOT NULL,
+    confidence REAL NOT NULL DEFAULT 1.0,
+    evidence_ids_json TEXT NOT NULL DEFAULT '[]',
+    mechanism_description TEXT,
+    observed_lag_sec REAL DEFAULT 0.0,
+    status TEXT NOT NULL DEFAULT 'HYPOTHESIZED',
+    created_at REAL NOT NULL,
+    updated_at REAL NOT NULL,
+    FOREIGN KEY (cause_entity_id) REFERENCES knowledge_entities(entity_id) ON DELETE CASCADE,
+    FOREIGN KEY (effect_entity_id) REFERENCES knowledge_entities(entity_id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_cl_cause ON causal_links(cause_entity_id);
+CREATE INDEX IF NOT EXISTS idx_cl_effect ON causal_links(effect_entity_id);
+CREATE INDEX IF NOT EXISTS idx_cl_status ON causal_links(status);
+
+CREATE TABLE IF NOT EXISTS causal_evidence_bindings (
+    binding_id TEXT PRIMARY KEY,
+    causal_link_id TEXT NOT NULL,
+    evidence_id TEXT NOT NULL,
+    support_type TEXT NOT NULL DEFAULT 'SUPPORTS',
+    strength REAL NOT NULL DEFAULT 1.0,
+    created_at REAL NOT NULL,
+    FOREIGN KEY (causal_link_id) REFERENCES causal_links(causal_link_id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_ceb_link ON causal_evidence_bindings(causal_link_id);
+CREATE INDEX IF NOT EXISTS idx_ceb_ev ON causal_evidence_bindings(evidence_id);
+"""
+
 def backup_database(db_path: str, backup_dir: str = "persistence_backups") -> str:
     """Creates a timestamped snapshot of the SQLite database prior to any schema modification."""
     if not os.path.exists(db_path):
@@ -1226,6 +1281,17 @@ def apply_migrations(db_path: str) -> int:
             conn.commit()
             logger.info("Migration v12 applied successfully.")
             current_version = 12
+
+        if current_version < 13:
+            logger.info("Applying Migration v13 (Temporal Knowledge & Causal State Tables)...")
+            cursor.executescript(MIGRATION_V13)
+            cursor.execute(
+                "INSERT INTO schema_migrations (version, applied_at, description) VALUES (?, ?, ?)",
+                (13, time.time(), "Temporal Knowledge and Causal State Engine tables")
+            )
+            conn.commit()
+            logger.info("Migration v13 applied successfully.")
+            current_version = 13
 
         return current_version
     except Exception as e:
