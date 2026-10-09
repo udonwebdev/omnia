@@ -107,6 +107,15 @@ DEFAULT_NAMESPACES: Dict[str, StateNamespace] = {
         replication_policy=StateClassification.REPLICATED,
         consistency_policy=ConsistencyPolicy.STRONG,
         sensitivity=StateClassification.AUTHORITATIVE
+    ),
+    # 12. Retrieval & Search Evidence Catalog (Unified Search Indices & Evidence Items)
+    "retrieval": StateNamespace(
+        namespace_id="retrieval",
+        name="Unified Search & Retrieval Evidence Catalog",
+        owner_type="LEADER",
+        replication_policy=StateClassification.REPLICATED,
+        consistency_policy=ConsistencyPolicy.STRONG,
+        sensitivity=StateClassification.AUTHORITATIVE
     )
 }
 

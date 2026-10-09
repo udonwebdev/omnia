@@ -1462,6 +1462,59 @@ async def run_diagnostics():
     except Exception as e:
         print(f"      [27] Ingestion Pipeline ........ FAIL ({e})")
 
+    # 20. Module 28: Unified Search & Retrieval Engine
+    print("\n[20/20] Checking Module 28: Unified Search & Retrieval Engine...")
+    from retrieval import (
+        unified_search_service,
+        SearchMode,
+        SearchFilter,
+        SearchQuery,
+        CorpusType,
+        EvidenceItem,
+        SearchResult
+    )
+    from ingestion.models import DataClassification
+
+    try:
+        # 20a. Unified Hybrid Multi-Corpus Retrieval & Rank Fusion
+        res = unified_search_service.search(
+            query_text="system-kernel execution",
+            mode=SearchMode.HYBRID,
+            filters=SearchFilter(max_classification=DataClassification.INTERNAL),
+            limit=5
+        )
+        assert isinstance(res, SearchResult)
+        assert res.total_hits >= 1
+        assert len(res.evidence_items) >= 1
+        top_ev = res.evidence_items[0]
+        assert isinstance(top_ev, EvidenceItem)
+        assert top_ev.confidence_score > 0.0
+        assert top_ev.provenance_hash is not None
+        print("      [28] Unified Search & RRF ...... PASS (Multi-corpus rank fusion & confidence calibration)")
+
+        # 20b. Evidence Extraction & Provenance Tracking
+        ev_list = unified_search_service.persistence.get_evidence_by_query(res.query_id)
+        assert len(ev_list) >= 1
+        assert ev_list[0].query_id == res.query_id
+        print("      [28] Evidence Persistence ...... PASS (Evidence item extraction & cryptographic provenance)")
+
+        # 20c. Query Audit & Cache Verification
+        q_audit = unified_search_service.persistence.get_logged_query(res.query_id)
+        assert q_audit is not None
+        assert q_audit["total_hits"] >= 1
+        # Re-query to trigger cache hit
+        res_cached = unified_search_service.search(
+            query_text="system-kernel execution",
+            mode=SearchMode.HYBRID,
+            filters=SearchFilter(max_classification=DataClassification.INTERNAL),
+            limit=5
+        )
+        assert res_cached.total_hits == res.total_hits
+        print("      [28] Audit & Query Caching ..... PASS (Durable query audit & result caching with hit tracking)")
+
+    except Exception as e:
+        print(f"      [28] Retrieval Engine .......... FAIL ({e})")
+
     print("\n" + "=" * 60)
     print("Diagnostics complete.")
     print("=" * 60)

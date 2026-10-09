@@ -454,6 +454,19 @@ EVENT_SCHEMAS: Dict[str, Dict[str, Any]] = {
     },
     "data.source.recovered": {
         "required_fields": ["source_id", "observed_at"]
+    },
+    # Unified Search & Retrieval Engine Events (Module 28)
+    "search.executed": {
+        "required_fields": ["query_id", "query_text", "total_hits", "latency_ms"]
+    },
+    "search.indexed": {
+        "required_fields": ["item_id", "corpus_type", "indexed_at"]
+    },
+    "search.degraded": {
+        "required_fields": ["corpus_type", "reason"]
+    },
+    "search.evidence.extracted": {
+        "required_fields": ["evidence_id", "source_record_id", "confidence_score"]
     }
 }
 

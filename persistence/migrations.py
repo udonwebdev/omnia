@@ -7,7 +7,7 @@ from typing import List, Tuple
 
 logger = logging.getLogger("Omnia.Persistence.Migrations")
 
-CURRENT_SCHEMA_VERSION = 9
+CURRENT_SCHEMA_VERSION = 10
 
 MIGRATION_V1 = """
 -- Schema Version 1: Durable Task Graph & Crash Recovery Tables
@@ -846,6 +846,62 @@ CREATE TABLE IF NOT EXISTS ingestion_checkpoints (
 );
 """
 
+MIGRATION_V10 = """
+-- Schema Version 10: Unified Search & Retrieval Engine Tables (Module 28)
+
+CREATE TABLE IF NOT EXISTS retrieval_evidence (
+    evidence_id TEXT PRIMARY KEY,
+    query_id TEXT NOT NULL,
+    corpus_type TEXT NOT NULL,
+    item_id TEXT NOT NULL,
+    source_record_id TEXT,
+    title TEXT NOT NULL,
+    content_snippet TEXT NOT NULL,
+    retrieval_score REAL NOT NULL,
+    normalized_score REAL NOT NULL,
+    confidence_score REAL NOT NULL,
+    source_id TEXT NOT NULL,
+    canonical_id TEXT,
+    provenance_hash TEXT NOT NULL,
+    observed_at REAL NOT NULL,
+    retrieved_at REAL NOT NULL,
+    classification TEXT NOT NULL DEFAULT 'INTERNAL',
+    trust_boundary TEXT NOT NULL DEFAULT 'TRUSTED_INTERNAL',
+    freshness_status TEXT NOT NULL DEFAULT 'FRESH',
+    metadata_json TEXT NOT NULL DEFAULT '{}'
+);
+
+CREATE INDEX IF NOT EXISTS idx_retrieval_ev_query ON retrieval_evidence(query_id);
+CREATE INDEX IF NOT EXISTS idx_retrieval_ev_corpus ON retrieval_evidence(corpus_type);
+CREATE INDEX IF NOT EXISTS idx_retrieval_ev_can ON retrieval_evidence(canonical_id);
+
+CREATE TABLE IF NOT EXISTS retrieval_queries (
+    query_id TEXT PRIMARY KEY,
+    query_text TEXT NOT NULL,
+    filters_json TEXT NOT NULL DEFAULT '{}',
+    mode TEXT NOT NULL DEFAULT 'HYBRID',
+    total_hits INTEGER NOT NULL DEFAULT 0,
+    latency_ms REAL NOT NULL DEFAULT 0.0,
+    executed_at REAL NOT NULL,
+    actor_id TEXT DEFAULT 'system',
+    metadata_json TEXT NOT NULL DEFAULT '{}'
+);
+
+CREATE INDEX IF NOT EXISTS idx_retrieval_query_time ON retrieval_queries(executed_at);
+
+CREATE TABLE IF NOT EXISTS retrieval_cache (
+    cache_key TEXT PRIMARY KEY,
+    query_hash TEXT NOT NULL,
+    filters_hash TEXT NOT NULL,
+    results_json TEXT NOT NULL,
+    cached_at REAL NOT NULL,
+    expires_at REAL NOT NULL,
+    hit_count INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE INDEX IF NOT EXISTS idx_retrieval_cache_exp ON retrieval_cache(expires_at);
+"""
+
 def backup_database(db_path: str, backup_dir: str = "persistence_backups") -> str:
     """Creates a timestamped snapshot of the SQLite database prior to any schema modification."""
     if not os.path.exists(db_path):
@@ -978,6 +1034,17 @@ def apply_migrations(db_path: str) -> int:
             conn.commit()
             logger.info("Migration v9 applied successfully.")
             current_version = 9
+
+        if current_version < 10:
+            logger.info("Applying Migration v10 (Unified Search & Retrieval Engine Tables)...")
+            cursor.executescript(MIGRATION_V10)
+            cursor.execute(
+                "INSERT INTO schema_migrations (version, applied_at, description) VALUES (?, ?, ?)",
+                (10, time.time(), "Unified Search and Retrieval Engine tables")
+            )
+            conn.commit()
+            logger.info("Migration v10 applied successfully.")
+            current_version = 10
 
         return current_version
     except Exception as e:

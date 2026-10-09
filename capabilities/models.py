@@ -17,6 +17,10 @@ class CapabilityCategory(Enum):
     VIDEO_STUDIO = "VIDEO_STUDIO"
     CONNECTOR = "CONNECTOR"
     INGESTION = "INGESTION"
+    RETRIEVAL = "RETRIEVAL"
+    DECISION = "DECISION"
+    KNOWLEDGE = "KNOWLEDGE"
+    TEMPORAL = "TEMPORAL"
 
 class CapabilityHealth(Enum):
     UNKNOWN = "UNKNOWN"

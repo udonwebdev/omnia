@@ -1826,9 +1826,54 @@ def resolve_data_conflict(conflict_id: str, strategy: str = "AUTHORITATIVE_SOURC
 @tool
 def get_ingestion_telemetry() -> str:
     """Returns ingestion pipeline telemetry, throughput, quarantine, and error rates."""
-    from ingestion.service import ingestion_service
+    from ingestion.service import data_ingestion_service
     try:
-        telem = ingestion_service.get_telemetry()
+        telem = data_ingestion_service.get_telemetry()
+        return json.dumps(telem.to_dict(), indent=2)
+    except Exception as e:
+        return json.dumps({"success": False, "error": str(e)}, indent=2)
+
+
+# --- Module 28: Unified Search & Retrieval Engine Tools ---
+@tool
+def execute_unified_search(
+    query_text: str,
+    search_mode: str = "HYBRID",
+    max_results: int = 10,
+    exclude_stale: bool = False
+) -> str:
+    """Executes fused hybrid search across Omnia's normalized records, vector memory, tasks, and configs."""
+    from retrieval.service import unified_search_service
+    from retrieval.models import SearchMode, SearchFilter
+    try:
+        mode_enum = SearchMode[search_mode.upper()] if search_mode.upper() in SearchMode.__members__ else SearchMode.HYBRID
+        filters = SearchFilter(exclude_stale=exclude_stale)
+        res = unified_search_service.search(
+            query_text=query_text,
+            mode=mode_enum,
+            filters=filters,
+            limit=max_results
+        )
+        return json.dumps(res.to_dict(), indent=2)
+    except Exception as e:
+        return json.dumps({"success": False, "error": str(e)}, indent=2)
+
+@tool
+def get_retrieval_evidence(query_id: str) -> str:
+    """Retrieves all persisted evidence items and confidence scores associated with a query."""
+    from retrieval.service import unified_search_service
+    try:
+        items = unified_search_service.get_evidence(query_id)
+        return json.dumps([item.to_dict() for item in items], indent=2)
+    except Exception as e:
+        return json.dumps({"success": False, "error": str(e)}, indent=2)
+
+@tool
+def get_retrieval_telemetry() -> str:
+    """Returns real-time search throughput, cache hit ratios, and latency distributions."""
+    from retrieval.service import unified_search_service
+    try:
+        telem = unified_search_service.get_telemetry()
         return json.dumps(telem.to_dict(), indent=2)
     except Exception as e:
         return json.dumps({"success": False, "error": str(e)}, indent=2)
@@ -1955,6 +2000,9 @@ OMNIA_ALL_TOOLS = [
     list_data_conflicts,
     resolve_data_conflict,
     get_ingestion_telemetry,
+    execute_unified_search,
+    get_retrieval_evidence,
+    get_retrieval_telemetry,
 ]
 
 # Backward compatibility alias
