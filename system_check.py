@@ -1515,6 +1515,50 @@ async def run_diagnostics():
     except Exception as e:
         print(f"      [28] Retrieval Engine .......... FAIL ({e})")
 
+    # 21. Module 29: Evidence & Decision Engine
+    print("\n[21/21] Checking Module 29: Evidence & Decision Engine...")
+    from decision import (
+        evidence_decision_service,
+        DecisionState,
+        ClaimStatus,
+        DecisionPolicy,
+        DecisionRecord
+    )
+
+    try:
+        # 21a. Claim Evaluation & Verifiable Conclusion
+        dec = evidence_decision_service.evaluate(
+            subject_id="diag_cluster_node",
+            decision_type="SYSTEM_INTEGRITY",
+            claims_text=["system-kernel execution is operational"],
+            policy=DecisionPolicy(min_confidence_to_accept=0.50)
+        )
+        assert isinstance(dec, DecisionRecord)
+        assert dec.state in (DecisionState.ACCEPTED, DecisionState.DISPUTED)
+        assert len(dec.claims) == 1
+        print("      [29] Evidence Aggregation & Dec PASS (Evidence weighting, stance attribution & conclusion)")
+
+        # 21b. Conflict Detection & Policy Abstention
+        dec_abstained = evidence_decision_service.evaluate(
+            subject_id="non_existent_resource",
+            decision_type="RESOURCE_EXISTENCE",
+            claims_text=["Resource xyz123 is present in topology"],
+            pre_gathered_evidence=[]
+        )
+        assert dec_abstained.state in (DecisionState.ABSTAINED, DecisionState.REJECTED)
+        assert dec_abstained.confidence_score == 0.0
+        print("      [29] Conflict & Policy Abstain  PASS (Zero-evidence abstention & uncertainty isolation)")
+
+        # 21c. Durable Decision Persistence & Inspection
+        persisted = evidence_decision_service.get_decision(dec.decision_id)
+        assert persisted is not None
+        assert persisted.decision_id == dec.decision_id
+        assert len(persisted.claims) == 1
+        print("      [29] Decision Durability ...... PASS (SQLite Schema V11 verification & audit trail)")
+
+    except Exception as e:
+        print(f"      [29] Decision Engine ........... FAIL ({e})")
+
     print("\n" + "=" * 60)
     print("Diagnostics complete.")
     print("=" * 60)

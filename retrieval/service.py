@@ -159,8 +159,20 @@ class UnifiedSearchService:
             cached_evidence = self.persistence.get_cached_result(cache_key)
             if cached_evidence is not None:
                 self.telemetry.cache_hits += 1
+                items = []
+                for row in cached_evidence:
+                    if hasattr(row, 'keys'):
+                        items.append(self.persistence._row_to_evidence(row))
+                    elif isinstance(row, dict):
+                        d = dict(row)
+                        d["corpus_type"] = CorpusType(d["corpus_type"])
+                        d["classification"] = DataClassification(d["classification"])
+                        d["trust_boundary"] = TrustBoundary(d["trust_boundary"])
+                        d["freshness"] = FreshnessStatus(d["freshness"])
+                        items.append(EvidenceItem(**d))
+                    else:
+                        items.append(row)
                 latency_ms = (time.perf_counter() - t0) * 1000.0
-                items = [self.persistence._row_to_evidence(row) if hasattr(row, 'keys') else EvidenceItem(**row) for row in cached_evidence]
                 return SearchResult(
                     query_id=query_id,
                     query_text=query_text,

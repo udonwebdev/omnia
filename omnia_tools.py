@@ -1879,6 +1879,45 @@ def get_retrieval_telemetry() -> str:
         return json.dumps({"success": False, "error": str(e)}, indent=2)
 
 
+# --- Module 29: Evidence & Decision Engine Tools ---
+@tool
+def evaluate_evidence_claims(
+    subject_id: str,
+    decision_type: str,
+    claims_json: str,
+    min_confidence: float = 0.70
+) -> str:
+    """Evaluates propositions against retrieved evidence to reach an authoritative, evidence-backed decision."""
+    from decision.service import evidence_decision_service
+    from decision.models import DecisionPolicy
+    try:
+        claims = json.loads(claims_json) if isinstance(claims_json, str) else claims_json
+        if not isinstance(claims, list):
+            claims = [str(claims)]
+        policy = DecisionPolicy(min_confidence_to_accept=min_confidence)
+        dec = evidence_decision_service.evaluate(
+            subject_id=subject_id,
+            decision_type=decision_type,
+            claims_text=claims,
+            policy=policy
+        )
+        return json.dumps(dec.to_dict(), indent=2)
+    except Exception as e:
+        return json.dumps({"success": False, "error": str(e)}, indent=2)
+
+@tool
+def get_decision_record(decision_id: str) -> str:
+    """Retrieves full details, evidence links, conflicts, and state for a decision record."""
+    from decision.service import evidence_decision_service
+    try:
+        dec = evidence_decision_service.get_decision(decision_id)
+        if not dec:
+            return json.dumps({"success": False, "error": f"Decision {decision_id} not found."})
+        return json.dumps(dec.to_dict(), indent=2)
+    except Exception as e:
+        return json.dumps({"success": False, "error": str(e)}, indent=2)
+
+
 OMNIA_ALL_TOOLS = [
     unlock_all_devices,
     play_youtube_video,
@@ -2003,6 +2042,8 @@ OMNIA_ALL_TOOLS = [
     execute_unified_search,
     get_retrieval_evidence,
     get_retrieval_telemetry,
+    evaluate_evidence_claims,
+    get_decision_record,
 ]
 
 # Backward compatibility alias

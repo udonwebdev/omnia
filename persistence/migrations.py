@@ -7,7 +7,7 @@ from typing import List, Tuple
 
 logger = logging.getLogger("Omnia.Persistence.Migrations")
 
-CURRENT_SCHEMA_VERSION = 10
+CURRENT_SCHEMA_VERSION = 11
 
 MIGRATION_V1 = """
 -- Schema Version 1: Durable Task Graph & Crash Recovery Tables
@@ -902,6 +902,82 @@ CREATE TABLE IF NOT EXISTS retrieval_cache (
 CREATE INDEX IF NOT EXISTS idx_retrieval_cache_exp ON retrieval_cache(expires_at);
 """
 
+MIGRATION_V11 = """
+-- Schema Version 11: Evidence & Decision Engine Tables (Module 29)
+
+CREATE TABLE IF NOT EXISTS decision_records (
+    decision_id TEXT PRIMARY KEY,
+    subject_id TEXT NOT NULL,
+    decision_type TEXT NOT NULL,
+    state TEXT NOT NULL DEFAULT 'EVALUATING',
+    confidence_score REAL NOT NULL,
+    uncertainty_score REAL NOT NULL DEFAULT 0.0,
+    primary_claim_id TEXT,
+    summary TEXT NOT NULL,
+    evaluated_at REAL NOT NULL,
+    expires_at REAL,
+    actor_id TEXT DEFAULT 'system',
+    policy_version TEXT NOT NULL DEFAULT '1.0.0',
+    metadata_json TEXT NOT NULL DEFAULT '{}'
+);
+
+CREATE INDEX IF NOT EXISTS idx_dec_subject ON decision_records(subject_id);
+CREATE INDEX IF NOT EXISTS idx_dec_state ON decision_records(state);
+CREATE INDEX IF NOT EXISTS idx_dec_eval_at ON decision_records(evaluated_at);
+
+CREATE TABLE IF NOT EXISTS decision_claims (
+    claim_id TEXT PRIMARY KEY,
+    decision_id TEXT NOT NULL,
+    statement TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'PENDING',
+    confidence_score REAL NOT NULL,
+    supporting_evidence_count INTEGER NOT NULL DEFAULT 0,
+    contradicting_evidence_count INTEGER NOT NULL DEFAULT 0,
+    evaluated_at REAL NOT NULL,
+    rationale TEXT,
+    metadata_json TEXT NOT NULL DEFAULT '{}',
+    FOREIGN KEY (decision_id) REFERENCES decision_records(decision_id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_claim_dec ON decision_claims(decision_id);
+CREATE INDEX IF NOT EXISTS idx_claim_status ON decision_claims(status);
+
+CREATE TABLE IF NOT EXISTS decision_evidence_links (
+    link_id TEXT PRIMARY KEY,
+    decision_id TEXT NOT NULL,
+    claim_id TEXT NOT NULL,
+    evidence_id TEXT NOT NULL,
+    stance TEXT NOT NULL, -- SUPPORTING, CONTRADICTING, NEUTRAL
+    weight REAL NOT NULL DEFAULT 1.0,
+    provenance_hash TEXT NOT NULL,
+    linked_at REAL NOT NULL,
+    FOREIGN KEY (decision_id) REFERENCES decision_records(decision_id) ON DELETE CASCADE,
+    FOREIGN KEY (claim_id) REFERENCES decision_claims(claim_id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_link_dec ON decision_evidence_links(decision_id);
+CREATE INDEX IF NOT EXISTS idx_link_claim ON decision_evidence_links(claim_id);
+CREATE INDEX IF NOT EXISTS idx_link_ev ON decision_evidence_links(evidence_id);
+
+CREATE TABLE IF NOT EXISTS decision_conflicts (
+    conflict_id TEXT PRIMARY KEY,
+    decision_id TEXT NOT NULL,
+    claim_id TEXT NOT NULL,
+    conflict_type TEXT NOT NULL,
+    severity REAL NOT NULL,
+    resolution_state TEXT NOT NULL DEFAULT 'UNRESOLVED',
+    resolved_by TEXT,
+    resolution_rationale TEXT,
+    detected_at REAL NOT NULL,
+    resolved_at REAL,
+    metadata_json TEXT NOT NULL DEFAULT '{}',
+    FOREIGN KEY (decision_id) REFERENCES decision_records(decision_id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_conflict_dec ON decision_conflicts(decision_id);
+CREATE INDEX IF NOT EXISTS idx_conflict_claim ON decision_conflicts(claim_id);
+"""
+
 def backup_database(db_path: str, backup_dir: str = "persistence_backups") -> str:
     """Creates a timestamped snapshot of the SQLite database prior to any schema modification."""
     if not os.path.exists(db_path):
@@ -1045,6 +1121,17 @@ def apply_migrations(db_path: str) -> int:
             conn.commit()
             logger.info("Migration v10 applied successfully.")
             current_version = 10
+
+        if current_version < 11:
+            logger.info("Applying Migration v11 (Evidence & Decision Engine Tables)...")
+            cursor.executescript(MIGRATION_V11)
+            cursor.execute(
+                "INSERT INTO schema_migrations (version, applied_at, description) VALUES (?, ?, ?)",
+                (11, time.time(), "Evidence and Decision Engine tables")
+            )
+            conn.commit()
+            logger.info("Migration v11 applied successfully.")
+            current_version = 11
 
         return current_version
     except Exception as e:

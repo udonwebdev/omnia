@@ -76,8 +76,8 @@ class RetrievalPersistence:
             retrieved_at=row["retrieved_at"],
             classification=DataClassification(row["classification"]),
             trust_boundary=TrustBoundary(row["trust_boundary"]),
-            freshness=FreshnessStatus(row["freshness_status"]),
-            metadata=json.loads(row["metadata_json"])
+            freshness=FreshnessStatus(row["freshness_status"] if "freshness_status" in row.keys() else row.get("freshness", "FRESH")),
+            metadata=json.loads(row["metadata_json"]) if "metadata_json" in row.keys() else row.get("metadata", {})
         )
 
     # --- Query Audit Log ---

@@ -467,6 +467,42 @@ EVENT_SCHEMAS: Dict[str, Dict[str, Any]] = {
     },
     "search.evidence.extracted": {
         "required_fields": ["evidence_id", "source_record_id", "confidence_score"]
+    },
+    # Evidence & Decision Engine Events (Module 29)
+    "decision.evaluated": {
+        "required_fields": ["decision_id", "subject_id", "state", "confidence_score"]
+    },
+    "claim.evaluated": {
+        "required_fields": ["claim_id", "status", "confidence_score"]
+    },
+    "decision.conflict_detected": {
+        "required_fields": ["conflict_id", "claim_id", "conflicting_evidence"]
+    },
+    "decision.abstained": {
+        "required_fields": ["decision_id", "reason"]
+    },
+    # Knowledge Graph & Entity Resolution Events (Module 30)
+    "entity.created": {
+        "required_fields": ["entity_id", "entity_type"]
+    },
+    "entity.resolved": {
+        "required_fields": ["resolved_entity_id", "canonical_name", "candidate_count"]
+    },
+    "relationship.asserted": {
+        "required_fields": ["relationship_id", "source_id", "predicate", "target_id"]
+    },
+    "entity.split": {
+        "required_fields": ["original_entity_id", "split_entity_ids", "reason"]
+    },
+    # Temporal Knowledge & Causal State Events (Module 31)
+    "temporal.state_recorded": {
+        "required_fields": ["state_id", "entity_id", "valid_from", "transaction_time"]
+    },
+    "causal.link_asserted": {
+        "required_fields": ["causal_link_id", "cause_entity_id", "effect_entity_id", "confidence"]
+    },
+    "temporal.state_reconstructed": {
+        "required_fields": ["entity_id", "as_of_valid_time", "as_of_tx_time"]
     }
 }
 

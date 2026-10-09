@@ -116,6 +116,33 @@ DEFAULT_NAMESPACES: Dict[str, StateNamespace] = {
         replication_policy=StateClassification.REPLICATED,
         consistency_policy=ConsistencyPolicy.STRONG,
         sensitivity=StateClassification.AUTHORITATIVE
+    ),
+    # 13. Evidence & Decision Catalog (Module 29 Claims, Evidence Bundles & Verifiable Conclusions)
+    "decision": StateNamespace(
+        namespace_id="decision",
+        name="Evidence & Decision Engine Catalog",
+        owner_type="LEADER",
+        replication_policy=StateClassification.REPLICATED,
+        consistency_policy=ConsistencyPolicy.STRONG,
+        sensitivity=StateClassification.AUTHORITATIVE
+    ),
+    # 14. Knowledge Graph & Entity Resolution (Module 30 Entities, Relationships & Resolution Records)
+    "knowledge": StateNamespace(
+        namespace_id="knowledge",
+        name="Knowledge Graph & Entity Resolution Catalog",
+        owner_type="LEADER",
+        replication_policy=StateClassification.REPLICATED,
+        consistency_policy=ConsistencyPolicy.STRONG,
+        sensitivity=StateClassification.AUTHORITATIVE
+    ),
+    # 15. Temporal Knowledge & Causal State (Module 31 Temporal States, Causal Edges & World Histories)
+    "temporal": StateNamespace(
+        namespace_id="temporal",
+        name="Temporal Knowledge & Causal State Catalog",
+        owner_type="LEADER",
+        replication_policy=StateClassification.REPLICATED,
+        consistency_policy=ConsistencyPolicy.STRONG,
+        sensitivity=StateClassification.AUTHORITATIVE
     )
 }
 
