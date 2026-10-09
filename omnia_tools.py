@@ -882,7 +882,284 @@ def diff_config_versions(base_version: int, target_version: int) -> str:
     )
     return config_control_plane.diff_engine.format_diff_report(changes, mask_secrets=True)
 
+# --- Module 25: Secrets, Credentials & Secure Identity Lifecycle Tools ---
+from secrets import secrets_service, SecretType
 
+@tool
+def get_secret_metadata(secret_id: str) -> str:
+    """Returns metadata for a registered secret (version, provider, scope, status, expiration). Never exposes plaintext."""
+    meta = secrets_service.get_secret_metadata(secret_id)
+    if not meta:
+        return f"SECRET_NOT_FOUND: Secret '{secret_id}' does not exist in catalog."
+    return json.dumps(meta.to_dict(), indent=2)
+
+@tool
+def acquire_secret_lease(secret_uri: str, requester: str, purpose: str, capability: str, ttl_seconds: float = 300.0) -> str:
+    """Contextually requests authorization and issues a short-lived lease for a credential. Returns lease metadata, not raw secret."""
+    try:
+        handle = secrets_service.acquire_secret(
+            uri_or_id=secret_uri,
+            requester=requester,
+            purpose=purpose,
+            capability=capability,
+            ttl_seconds=ttl_seconds
+        )
+        return json.dumps({
+            "status": "LEASE_ISSUED",
+            "lease": handle.lease.to_dict(),
+            "secret_id": handle.secret_id,
+            "version": handle.version
+        }, indent=2)
+    except Exception as e:
+        return f"ACQUISITION_DENIED: {e}"
+
+@tool
+def release_secret_lease(lease_id: str) -> str:
+    """Releases and invalidates an active credential lease."""
+    ok = secrets_service.release_secret(lease_id)
+    return f"LEASE_RELEASED: lease_id='{lease_id}', success={ok}"
+
+@tool
+def rotate_secret(secret_id: str, new_plaintext: str) -> str:
+    """Triggers zero-downtime rotation for a credential with pre-activation validation."""
+    ok, ver, msg = secrets_service.rotate_secret(secret_id, new_plaintext)
+    return f"ROTATION_RESULT: success={ok}, version={ver.version if ver else None}, message='{msg}'"
+
+@tool
+def revoke_secret(secret_id: str, reason: str = "Operator revoked") -> str:
+    """Immediately revokes an active secret and terminates all associated active leases."""
+    ok, msg = secrets_service.revoke_secret(secret_id, reason=reason)
+    return f"REVOCATION_RESULT: success={ok}, message='{msg}'"
+
+@tool
+def mark_secret_compromised(secret_id: str, incident_id: str) -> str:
+    """Triggers emergency compromise protocol: blocks access, revokes leases, and emits security alert."""
+    ok, msg = secrets_service.mark_compromised(secret_id, incident_id=incident_id)
+    return f"COMPROMISE_HANDLED: success={ok}, message='{msg}'"
+
+@tool
+def get_secrets_telemetry() -> str:
+    """Returns safe operational metrics for secrets without revealing sensitive values."""
+    telem = secrets_service.get_telemetry()
+    return json.dumps(telem.to_dict(), indent=2)
+# --- Video Studio Optional Subsystem (Module 0 & 1) ---
+from video_studio.service import video_studio_service
+from video_studio.registry import video_studio_capability_registry
+from video_studio.registry_models import VideoStudioCategory
+
+@tool
+def get_video_studio_status() -> str:
+    """Queries the operational readiness, lifecycle status, and compute hardware of optional OMNIA Video Studio."""
+    summary = video_studio_service.get_status_summary()
+    return json.dumps(summary, indent=2)
+
+@tool
+def list_video_studio_capabilities(category: Optional[str] = None) -> str:
+    """Lists registered Video Studio capabilities and their real implementation and availability states."""
+    cat_enum = None
+    if category:
+        try:
+            cat_enum = VideoStudioCategory(category.upper())
+        except Exception:
+            pass
+    caps = video_studio_capability_registry.list(category=cat_enum)
+    res = [
+        {
+            "id": c.id,
+            "name": c.name,
+            "category": c.category.value,
+            "implementation_state": c.implementation_state.value,
+            "is_enabled": video_studio_capability_registry.is_enabled(c.id),
+            "is_available": video_studio_capability_registry.is_available(c.id),
+            "runtime_status": video_studio_capability_registry.get_status(c.id).value
+        }
+        for c in caps
+    ]
+    return json.dumps(res, indent=2)
+
+@tool
+def check_video_studio_capability(capability_id: str) -> str:
+    """Performs deep health and dependency check on a specific Video Studio capability."""
+    health = video_studio_capability_registry.get_health(capability_id)
+    return json.dumps(health.to_dict(), indent=2)
+
+# --- Module 2: Media Asset Engine & Ingest Tools ---
+@tool
+def import_media_asset(
+    project_id: str,
+    file_path: str,
+    display_name: Optional[str] = None,
+    bin_id: Optional[str] = None,
+    allow_duplicates: bool = False
+) -> str:
+    """Ingests, probes, validates, and registers a media file into the Video Studio project library."""
+    from video_studio.media_ingest import media_ingest_service
+    ok, asset, msg = media_ingest_service.ingest_file(
+        project_id=project_id,
+        source_file_path=file_path,
+        display_name=display_name,
+        target_bin_id=bin_id,
+        allow_duplicates=allow_duplicates,
+    )
+    res = {
+        "success": ok,
+        "message": msg,
+        "asset": asset.to_dict() if asset else None,
+    }
+    return json.dumps(res, indent=2)
+
+@tool
+def get_media_asset(project_id: str, asset_id: str) -> str:
+    """Retrieves normalized metadata for an ingested media asset in Video Studio."""
+    from video_studio.media_library import media_library_registry
+    lib = media_library_registry.get_or_create(project_id)
+    asset = lib.get_asset(asset_id)
+    if not asset:
+        return json.dumps({"error": f"Asset '{asset_id}' not found in project '{project_id}'."})
+    return json.dumps(asset.to_dict(), indent=2)
+
+@tool
+def list_media_assets(project_id: str, bin_id: Optional[str] = None) -> str:
+    """Lists media assets in a Video Studio project or specific bin."""
+    from video_studio.media_library import media_library_registry, MediaSearchQuery
+    lib = media_library_registry.get_or_create(project_id)
+    if bin_id:
+        assets = lib.search_assets(MediaSearchQuery(bin_id=bin_id, include_sub_bins=False))
+    else:
+        assets = lib.list_assets()
+    return json.dumps([a.to_dict() for a in assets], indent=2)
+
+@tool
+def create_media_bin(project_id: str, name: str, parent_bin_id: Optional[str] = None, color: str = "#808080") -> str:
+    """Creates a logical bin (folder) in the Video Studio project media library."""
+    from video_studio.media_library import media_library_registry
+    lib = media_library_registry.get_or_create(project_id)
+    try:
+        b = lib.create_bin(name=name, parent_bin_id=parent_bin_id, color=color)
+        return json.dumps({"success": True, "bin": b.to_dict()}, indent=2)
+    except Exception as e:
+        return json.dumps({"success": False, "error": str(e)}, indent=2)
+
+@tool
+def search_media_assets(
+    project_id: str,
+    query_text: Optional[str] = None,
+    media_type: Optional[str] = None,
+    tag: Optional[str] = None,
+    bin_id: Optional[str] = None
+) -> str:
+    """Searches the project media library by text query, media type, tag, or bin."""
+    from video_studio.media_library import media_library_registry, MediaSearchQuery
+    from video_studio.media_models import AssetMediaType
+    lib = media_library_registry.get_or_create(project_id)
+    types = None
+    if media_type:
+        try:
+            types = [AssetMediaType(media_type.upper())]
+        except Exception:
+            pass
+    tags = [tag] if tag else None
+    results = lib.search_assets(MediaSearchQuery(
+        query_text=query_text,
+        media_types=types,
+        tags=tags,
+        bin_id=bin_id
+    ))
+    return json.dumps([a.to_dict() for a in results], indent=2)
+
+# --- Module 3: Media Analysis & Derivatives Tools ---
+@tool
+def analyze_media_asset(project_id: str, asset_id: str) -> str:
+    """Runs the deep media analysis pipeline on an asset (container, streams, color, timecode)."""
+    from video_studio.media_library import media_library_registry
+    from video_studio.analysis_jobs import media_analysis_job_manager
+    lib = media_library_registry.get_or_create(project_id)
+    asset = lib.get_asset(asset_id)
+    if not asset:
+        return json.dumps({"error": f"Asset '{asset_id}' not found."})
+
+    job = media_analysis_job_manager.submit_job(
+        project_id=project_id,
+        asset_id=asset_id,
+        file_path=asset.file_location,
+        fingerprint=asset.content_hash_sha256 or "default_fp",
+    )
+    # Execute analysis synchronously for tool invocation
+    executed = media_analysis_job_manager.execute_job_synchronously(job.job_id)
+    return json.dumps(executed.to_dict(), indent=2)
+
+@tool
+def get_asset_thumbnail(project_id: str, asset_id: str, timestamp_seconds: float = 1.0, width: int = 320, height: int = 180) -> str:
+    """Generates or retrieves a cached representative video thumbnail for an asset."""
+    from video_studio.media_library import media_library_registry
+    from video_studio.thumbnail_engine import thumbnail_engine
+    lib = media_library_registry.get_or_create(project_id)
+    asset = lib.get_asset(asset_id)
+    if not asset:
+        return json.dumps({"error": f"Asset '{asset_id}' not found."})
+
+    thumb_path = thumbnail_engine.generate_thumbnail(
+        file_path=asset.file_location,
+        asset_id=asset_id,
+        timestamp_seconds=timestamp_seconds,
+        width=width,
+        height=height,
+    )
+    return json.dumps({"asset_id": asset_id, "timestamp_seconds": timestamp_seconds, "thumbnail_path": thumb_path}, indent=2)
+
+@tool
+def get_asset_waveform(project_id: str, asset_id: str, stream_index: int = 0, resolution: str = "MEDIUM") -> str:
+    """Generates or retrieves cached normalized audio peak waveform data for an asset."""
+    from video_studio.media_library import media_library_registry
+    from video_studio.waveform_engine import waveform_engine
+    from video_studio.analysis_models import WaveformResolution, ChannelMode
+    lib = media_library_registry.get_or_create(project_id)
+    asset = lib.get_asset(asset_id)
+    if not asset:
+        return json.dumps({"error": f"Asset '{asset_id}' not found."})
+
+    res_enum = WaveformResolution.MEDIUM
+    try:
+        res_enum = WaveformResolution(resolution.upper())
+    except Exception:
+        pass
+
+    wf = waveform_engine.generate_waveform(
+        file_path=asset.file_location,
+        asset_id=asset_id,
+        stream_index=stream_index,
+        resolution=res_enum,
+        channel_mode=ChannelMode.COMBINED,
+        duration_seconds=asset.duration_seconds or 10.0,
+        channels=asset.audio_channels or 2,
+        sample_rate=asset.sample_rate or 48000,
+    )
+    return json.dumps(waveform_engine._serialize_dataset(wf), indent=2)
+
+@tool
+def generate_contact_sheet(project_id: str, asset_id: str, frame_count: int = 9) -> str:
+    """Generates a contact sheet of representative chronological frames for shot analysis."""
+    from video_studio.media_library import media_library_registry
+    from video_studio.thumbnail_engine import thumbnail_engine
+    lib = media_library_registry.get_or_create(project_id)
+    asset = lib.get_asset(asset_id)
+    if not asset:
+        return json.dumps({"error": f"Asset '{asset_id}' not found."})
+
+    res = thumbnail_engine.generate_contact_sheet(
+        file_path=asset.file_location,
+        asset_id=asset_id,
+        duration_seconds=asset.duration_seconds or 10.0,
+        frame_count=frame_count,
+    )
+    return json.dumps({
+        "asset_id": res.asset_id,
+        "total_frames": res.total_frames,
+        "frames": [
+            {"index": f.frame_index, "timestamp": f.timestamp_seconds, "timecode": f.timecode_str, "uri": f.image_uri}
+            for f in res.frames
+        ]
+    }, indent=2)
 
 
 OMNIA_ALL_TOOLS = [
@@ -948,6 +1225,22 @@ OMNIA_ALL_TOOLS = [
     rollback_config_version,
     detect_config_drift,
     diff_config_versions,
+    get_secret_metadata,
+    acquire_secret_lease,
+    release_secret_lease,
+    rotate_secret,
+    revoke_secret,
+    mark_secret_compromised,
+    get_secrets_telemetry,
+    redact_sensitive_text,
+    get_video_studio_status,
+    list_video_studio_capabilities,
+    check_video_studio_capability,
+    import_media_asset,
+    get_media_asset,
+    list_media_assets,
+    create_media_bin,
+    search_media_assets,
 ]
 
 # Backward compatibility alias

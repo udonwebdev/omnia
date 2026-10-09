@@ -80,6 +80,15 @@ DEFAULT_NAMESPACES: Dict[str, StateNamespace] = {
         replication_policy=StateClassification.REPLICATED,
         consistency_policy=ConsistencyPolicy.STRONG,
         sensitivity=StateClassification.AUTHORITATIVE
+    ),
+    # 9. Secret Metadata Catalog (Authoritative References ONLY, zero plaintext)
+    "secrets_metadata": StateNamespace(
+        namespace_id="secrets_metadata",
+        name="Cluster Secret Metadata & Reference Catalog",
+        owner_type="LEADER",
+        replication_policy=StateClassification.REPLICATED,
+        consistency_policy=ConsistencyPolicy.STRONG,
+        sensitivity=StateClassification.AUTHORITATIVE
     )
 }
 

@@ -340,6 +340,43 @@ EVENT_SCHEMAS: Dict[str, Dict[str, Any]] = {
     },
     "video_studio.job_failed": {
         "required_fields": ["job_id", "job_type", "error_type", "error_message"]
+    },
+    # Secrets & Credential Lifecycle Events (Module 25)
+    "secret.created": {
+        "required_fields": ["secret_id", "version", "secret_type", "scope", "provider"]
+    },
+    "secret.access_requested": {
+        "required_fields": ["secret_id", "version", "requester", "purpose", "capability"]
+    },
+    "secret.access_granted": {
+        "required_fields": ["lease_id", "secret_id", "version", "requester", "expires_at"]
+    },
+    "secret.access_denied": {
+        "required_fields": ["secret_id", "requester", "purpose", "reason"]
+    },
+    "secret.rotation_started": {
+        "required_fields": ["secret_id", "from_version", "to_version", "strategy"]
+    },
+    "secret.rotation_completed": {
+        "required_fields": ["secret_id", "active_version"]
+    },
+    "secret.rotation_failed": {
+        "required_fields": ["secret_id", "failed_version", "reason"]
+    },
+    "secret.revoked": {
+        "required_fields": ["secret_id", "version", "reason"]
+    },
+    "secret.compromised": {
+        "required_fields": ["secret_id", "version", "incident_id", "action_taken"]
+    },
+    "secret.expiring": {
+        "required_fields": ["secret_id", "version", "expires_in_sec"]
+    },
+    "secret.expired": {
+        "required_fields": ["secret_id", "version"]
+    },
+    "secret.provider_health_changed": {
+        "required_fields": ["provider_id", "old_health", "new_health"]
     }
 }
 

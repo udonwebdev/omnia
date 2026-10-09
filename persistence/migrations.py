@@ -7,7 +7,7 @@ from typing import List, Tuple
 
 logger = logging.getLogger("Omnia.Persistence.Migrations")
 
-CURRENT_SCHEMA_VERSION = 6
+CURRENT_SCHEMA_VERSION = 7
 
 MIGRATION_V1 = """
 -- Schema Version 1: Durable Task Graph & Crash Recovery Tables
@@ -559,6 +559,89 @@ CREATE INDEX IF NOT EXISTS idx_config_drift_node ON config_drift_records(node_id
 CREATE INDEX IF NOT EXISTS idx_config_drift_status ON config_drift_records(status);
 """
 
+MIGRATION_V7 = """
+-- Schema Version 7: Secrets, Credentials & Secure Identity Lifecycle
+
+CREATE TABLE IF NOT EXISTS secret_metadata (
+    secret_id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    secret_type TEXT NOT NULL,
+    provider TEXT NOT NULL,
+    scope TEXT NOT NULL DEFAULT 'CLUSTER',
+    version INTEGER NOT NULL DEFAULT 1,
+    status TEXT NOT NULL DEFAULT 'ACTIVE',
+    created_at REAL NOT NULL,
+    updated_at REAL NOT NULL,
+    expires_at REAL,
+    last_rotated_at REAL,
+    last_used_at REAL,
+    rotation_policy_json TEXT NOT NULL DEFAULT '{}',
+    access_policy_json TEXT NOT NULL DEFAULT '{}',
+    integrity_hash TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_secret_meta_type ON secret_metadata(secret_type);
+CREATE INDEX IF NOT EXISTS idx_secret_meta_status ON secret_metadata(status);
+CREATE INDEX IF NOT EXISTS idx_secret_meta_scope ON secret_metadata(scope);
+
+CREATE TABLE IF NOT EXISTS secret_versions (
+    secret_id TEXT NOT NULL,
+    version INTEGER NOT NULL,
+    status TEXT NOT NULL DEFAULT 'ACTIVE',
+    created_at REAL NOT NULL,
+    activated_at REAL,
+    retired_at REAL,
+    fingerprint TEXT NOT NULL,
+    ciphertext TEXT NOT NULL,
+    key_id TEXT NOT NULL,
+    salt TEXT NOT NULL,
+    nonce TEXT NOT NULL,
+    PRIMARY KEY (secret_id, version),
+    FOREIGN KEY (secret_id) REFERENCES secret_metadata(secret_id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_secret_versions_status ON secret_versions(status);
+
+CREATE TABLE IF NOT EXISTS secret_leases (
+    lease_id TEXT PRIMARY KEY,
+    secret_id TEXT NOT NULL,
+    version INTEGER NOT NULL,
+    requester TEXT NOT NULL,
+    purpose TEXT NOT NULL,
+    capability TEXT NOT NULL,
+    scope TEXT NOT NULL DEFAULT 'CLUSTER',
+    node_id TEXT NOT NULL DEFAULT 'local_node',
+    issued_at REAL NOT NULL,
+    expires_at REAL NOT NULL,
+    revoked_at REAL,
+    status TEXT NOT NULL DEFAULT 'ACTIVE',
+    FOREIGN KEY (secret_id) REFERENCES secret_metadata(secret_id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_secret_leases_secret ON secret_leases(secret_id);
+CREATE INDEX IF NOT EXISTS idx_secret_leases_status ON secret_leases(status);
+CREATE INDEX IF NOT EXISTS idx_secret_leases_expires ON secret_leases(expires_at);
+
+CREATE TABLE IF NOT EXISTS secret_audit_log (
+    event_id TEXT PRIMARY KEY,
+    secret_id TEXT NOT NULL,
+    version INTEGER NOT NULL,
+    requester TEXT NOT NULL,
+    purpose TEXT NOT NULL,
+    capability TEXT NOT NULL,
+    scope TEXT NOT NULL,
+    node_id TEXT NOT NULL,
+    action TEXT NOT NULL,
+    result TEXT NOT NULL,
+    timestamp REAL NOT NULL,
+    details_json TEXT NOT NULL DEFAULT '{}'
+);
+
+CREATE INDEX IF NOT EXISTS idx_secret_audit_secret ON secret_audit_log(secret_id);
+CREATE INDEX IF NOT EXISTS idx_secret_audit_time ON secret_audit_log(timestamp);
+CREATE INDEX IF NOT EXISTS idx_secret_audit_action ON secret_audit_log(action);
+"""
+
 def backup_database(db_path: str, backup_dir: str = "persistence_backups") -> str:
     """Creates a timestamped snapshot of the SQLite database prior to any schema modification."""
     if not os.path.exists(db_path):
@@ -658,6 +741,17 @@ def apply_migrations(db_path: str) -> int:
             conn.commit()
             logger.info("Migration v6 applied successfully.")
             current_version = 6
+
+        if current_version < 7:
+            logger.info("Applying Migration v7 (Secrets, Credentials & Secure Identity Tables)...")
+            cursor.executescript(MIGRATION_V7)
+            cursor.execute(
+                "INSERT INTO schema_migrations (version, applied_at, description) VALUES (?, ?, ?)",
+                (7, time.time(), "Secrets, Credentials and Secure Identity Lifecycle tables")
+            )
+            conn.commit()
+            logger.info("Migration v7 applied successfully.")
+            current_version = 7
 
         return current_version
     except Exception as e:
