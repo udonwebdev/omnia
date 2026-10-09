@@ -1447,6 +1447,114 @@ def manage_timeline_gaps(project_id: str, sequence_id: str, action: str, track_i
         return json.dumps({"success": False, "error": str(e)}, indent=2)
 
 
+# --- Video Studio Module 7: Playback Engine Tools ---
+@tool
+def create_playback_session(sequence_id: str, quality: str = "FULL", target_fps: float = 30.0) -> str:
+    """Creates a real-time playback session for a timeline sequence ('FULL', 'HALF', 'QUARTER', 'DRAFT')."""
+    from video_studio.timeline_service import timeline_service
+    from video_studio.playback_engine import playback_engine
+    from video_studio.playback_models import PlaybackQuality
+    seq = timeline_service.get_sequence(sequence_id)
+    if not seq:
+        return json.dumps({"success": False, "error": f"Sequence '{sequence_id}' not found."})
+    try:
+        q_enum = PlaybackQuality[quality.upper()] if quality.upper() in PlaybackQuality.__members__ else PlaybackQuality.FULL
+        session = playback_engine.create_session(seq, quality=q_enum, target_fps=target_fps)
+        return json.dumps({"success": True, "session": session.to_dict()}, indent=2)
+    except Exception as e:
+        return json.dumps({"success": False, "error": str(e)}, indent=2)
+
+@tool
+def control_playback_session(session_id: str, command: str, frame: int = 0, delta: int = 1) -> str:
+    """Controls a playback session ('PLAY', 'PAUSE', 'STOP', 'SEEK', 'STEP', 'RENDER')."""
+    from video_studio.playback_engine import playback_engine
+    cmd = command.upper()
+    try:
+        if cmd == "PLAY":
+            s = playback_engine.play(session_id)
+            return json.dumps({"success": True, "session": s.to_dict()}, indent=2)
+        elif cmd == "PAUSE":
+            s = playback_engine.pause(session_id)
+            return json.dumps({"success": True, "session": s.to_dict()}, indent=2)
+        elif cmd == "STOP":
+            s = playback_engine.stop(session_id)
+            return json.dumps({"success": True, "session": s.to_dict()}, indent=2)
+        elif cmd == "SEEK":
+            f = playback_engine.seek(session_id, frame)
+            return json.dumps({"success": True, "current_frame": f.timeline_frame, "is_gap": f.is_gap, "frame": f.to_dict()}, indent=2)
+        elif cmd == "STEP":
+            f = playback_engine.step_frame(session_id, delta=delta)
+            return json.dumps({"success": True, "current_frame": f.timeline_frame, "is_gap": f.is_gap, "frame": f.to_dict()}, indent=2)
+        elif cmd == "RENDER":
+            f = playback_engine.render_frame(session_id, frame)
+            return json.dumps({"success": True, "current_frame": f.timeline_frame, "is_gap": f.is_gap, "frame": f.to_dict()}, indent=2)
+        else:
+            return json.dumps({"success": False, "error": f"Unknown command: {command}"})
+    except Exception as e:
+        return json.dumps({"success": False, "error": str(e)}, indent=2)
+
+@tool
+def get_playback_metrics(session_id: str) -> str:
+    """Retrieves real-time playback telemetry, dropped frames, and decoding statistics."""
+    from video_studio.playback_engine import playback_engine
+    session = playback_engine.get_session(session_id)
+    if not session:
+        return json.dumps({"success": False, "error": f"Session '{session_id}' not found."})
+    return json.dumps({"success": True, "metrics": session.metrics.to_dict()}, indent=2)
+
+
+# --- Video Studio Module 8: Animation & Keyframe Automation Tools ---
+@tool
+def add_property_keyframe(property_id: str, frame: int, value: float, interpolation: str = "LINEAR", handle_left: float = 0.0, handle_right: float = 0.0) -> str:
+    """Adds or updates a keyframe on an animatable property (e.g. opacity, scale, position)."""
+    from video_studio.animation_service import animation_service
+    from video_studio.animation_models import InterpolationMode
+    try:
+        interp_enum = InterpolationMode[interpolation.upper()] if interpolation.upper() in InterpolationMode.__members__ else InterpolationMode.LINEAR
+        kf = animation_service.set_keyframe(
+            property_id=property_id,
+            frame=frame,
+            value=value,
+            interpolation=interp_enum,
+            handle_left=(handle_left, 0.0),
+            handle_right=(handle_right, 0.0),
+        )
+        return json.dumps({"success": True, "keyframe": kf.to_dict()}, indent=2)
+    except Exception as e:
+        return json.dumps({"success": False, "error": str(e)}, indent=2)
+
+@tool
+def evaluate_animated_property(property_id: str, frame: int) -> str:
+    """Evaluates an animatable property value at a specific frame using Bezier/Linear interpolation."""
+    from video_studio.animation_service import animation_service
+    from video_studio.animation_evaluator import animation_evaluator
+    prop = animation_service.get_property(property_id)
+    if not prop:
+        return json.dumps({"success": False, "error": f"Property '{property_id}' not found."})
+    try:
+        val = animation_evaluator.evaluate(prop, frame)
+        return json.dumps({"success": True, "property_id": property_id, "frame": frame, "value": val}, indent=2)
+    except Exception as e:
+        return json.dumps({"success": False, "error": str(e)}, indent=2)
+
+@tool
+def query_property_keyframes(property_id: str) -> str:
+    """Returns all keyframes defined on an animatable property."""
+    from video_studio.animation_service import animation_service
+    prop = animation_service.get_property(property_id)
+    if not prop:
+        return json.dumps({"success": False, "error": f"Property '{property_id}' not found."})
+    return json.dumps({
+        "success": True,
+        "property_id": prop.property_id,
+        "property_name": prop.property_name,
+        "target_id": prop.target_id,
+        "default_value": prop.default_value,
+        "keyframes": [kf.to_dict() for kf in prop.keyframes]
+    }, indent=2)
+
+
+
 @tool
 def list_external_connectors() -> str:
     """Lists all registered external connectors and their operations."""
@@ -1633,6 +1741,99 @@ def get_connector_telemetry() -> str:
     }, indent=2)
 
 
+# --- Module 27: Data Ingestion & Knowledge Pipeline Tools ---
+@tool
+def ingest_external_data(
+    source_id: str,
+    payload: str,
+    data_category: str = "GENERIC",
+    source_type: str = "api",
+    external_record_id: str = "",
+    trust_boundary: str = "UNTRUSTED",
+    content_type: str = "application/json"
+) -> str:
+    """Ingests raw external data into Omnia's normalized knowledge pipeline."""
+    from ingestion.service import ingestion_service
+    from ingestion.models import DataCategory, TrustBoundary, ContentType
+    try:
+        parsed_payload = json.loads(payload) if (payload.startswith("{") or payload.startswith("[")) else payload
+        cat = DataCategory[data_category.upper()] if data_category.upper() in DataCategory.__members__ else DataCategory.GENERIC
+        tb = TrustBoundary[trust_boundary.upper()] if trust_boundary.upper() in TrustBoundary.__members__ else TrustBoundary.UNTRUSTED
+        ct = ContentType.JSON if "json" in content_type else ContentType.TEXT
+
+        envelope = ingestion_service.ingest_raw(
+            source_id=source_id,
+            source_type=source_type,
+            raw_payload=parsed_payload,
+            category=cat,
+            trust_boundary=tb,
+            content_type=ct,
+            external_record_id=external_record_id or None
+        )
+        return json.dumps(envelope.to_dict(), indent=2)
+    except Exception as e:
+        return json.dumps({"success": False, "error": str(e)}, indent=2)
+
+@tool
+def process_ingestion_pipeline(envelope_id: str) -> str:
+    """Executes normalization, validation, deduplication and enrichment on an ingested envelope."""
+    from ingestion.service import ingestion_service
+    try:
+        record = ingestion_service.process_pipeline(envelope_id)
+        if not record:
+            return json.dumps({"success": False, "error": f"Failed to process envelope {envelope_id} or rejected."})
+        return json.dumps(record.to_dict(), indent=2)
+    except Exception as e:
+        return json.dumps({"success": False, "error": str(e)}, indent=2)
+
+@tool
+def get_data_provenance(record_id: str) -> str:
+    """Retrieves full lineage and cryptographic provenance record for a normalized record."""
+    from ingestion.service import ingestion_service
+    try:
+        prov = ingestion_service.get_provenance(record_id)
+        if not prov:
+            return json.dumps({"success": False, "error": f"Provenance not found for record {record_id}."})
+        return json.dumps(prov.to_dict(), indent=2)
+    except Exception as e:
+        return json.dumps({"success": False, "error": str(e)}, indent=2)
+
+@tool
+def list_data_conflicts(status: str = "OPEN") -> str:
+    """Lists detected data conflicts across normalized ingestion records."""
+    from ingestion.service import ingestion_service
+    try:
+        conflicts = ingestion_service.list_conflicts(status=status)
+        return json.dumps([c.to_dict() for c in conflicts], indent=2)
+    except Exception as e:
+        return json.dumps({"success": False, "error": str(e)}, indent=2)
+
+@tool
+def resolve_data_conflict(conflict_id: str, strategy: str = "AUTHORITATIVE_SOURCE_WINS", winning_value: str = "") -> str:
+    """Resolves an open data conflict using an authoritative policy or manual override."""
+    from ingestion.service import ingestion_service
+    from ingestion.models import ConflictResolutionStrategy
+    try:
+        strat = ConflictResolutionStrategy[strategy.upper()] if strategy.upper() in ConflictResolutionStrategy.__members__ else ConflictResolutionStrategy.AUTHORITATIVE_SOURCE_WINS
+        val = json.loads(winning_value) if winning_value.startswith("{") or winning_value.startswith("[") else (winning_value or None)
+        resolved = ingestion_service.resolve_conflict(conflict_id, strategy=strat, winning_value=val)
+        if not resolved:
+            return json.dumps({"success": False, "error": f"Conflict {conflict_id} not found."})
+        return json.dumps(resolved.to_dict(), indent=2)
+    except Exception as e:
+        return json.dumps({"success": False, "error": str(e)}, indent=2)
+
+@tool
+def get_ingestion_telemetry() -> str:
+    """Returns ingestion pipeline telemetry, throughput, quarantine, and error rates."""
+    from ingestion.service import ingestion_service
+    try:
+        telem = ingestion_service.get_telemetry()
+        return json.dumps(telem.to_dict(), indent=2)
+    except Exception as e:
+        return json.dumps({"success": False, "error": str(e)}, indent=2)
+
+
 OMNIA_ALL_TOOLS = [
     unlock_all_devices,
     play_youtube_video,
@@ -1742,6 +1943,18 @@ OMNIA_ALL_TOOLS = [
     slide_edit_timeline_clip,
     ripple_delete_timeline_clips,
     manage_timeline_gaps,
+    create_playback_session,
+    control_playback_session,
+    get_playback_metrics,
+    add_property_keyframe,
+    evaluate_animated_property,
+    query_property_keyframes,
+    ingest_external_data,
+    process_ingestion_pipeline,
+    get_data_provenance,
+    list_data_conflicts,
+    resolve_data_conflict,
+    get_ingestion_telemetry,
 ]
 
 # Backward compatibility alias

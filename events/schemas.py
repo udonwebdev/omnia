@@ -420,6 +420,40 @@ EVENT_SCHEMAS: Dict[str, Dict[str, Any]] = {
     },
     "connector.webhook.verified": {
         "required_fields": ["webhook_id", "provider_id", "event_id", "normalized_type"]
+    },
+    # Data Ingestion, Normalization & Knowledge Pipeline Events (Module 27)
+    "data.ingestion.started": {
+        "required_fields": ["envelope_id", "source_id", "content_type"]
+    },
+    "data.ingestion.completed": {
+        "required_fields": ["envelope_id", "source_id", "records_count"]
+    },
+    "data.ingestion.failed": {
+        "required_fields": ["envelope_id", "source_id", "error"]
+    },
+    "data.normalized": {
+        "required_fields": ["record_id", "canonical_entity_type", "canonical_id"]
+    },
+    "data.rejected": {
+        "required_fields": ["envelope_id", "reason"]
+    },
+    "data.quarantined": {
+        "required_fields": ["envelope_id", "source_id", "reason"]
+    },
+    "data.conflict.detected": {
+        "required_fields": ["conflict_id", "entity_id", "field_name", "sources"]
+    },
+    "data.conflict.resolved": {
+        "required_fields": ["conflict_id", "entity_id", "strategy"]
+    },
+    "data.change.detected": {
+        "required_fields": ["entity_id", "change_type", "source_id"]
+    },
+    "data.source.stale": {
+        "required_fields": ["source_id", "last_observed_at"]
+    },
+    "data.source.recovered": {
+        "required_fields": ["source_id", "observed_at"]
     }
 }
 

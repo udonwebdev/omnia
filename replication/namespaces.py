@@ -98,6 +98,15 @@ DEFAULT_NAMESPACES: Dict[str, StateNamespace] = {
         replication_policy=StateClassification.REPLICATED,
         consistency_policy=ConsistencyPolicy.STRONG,
         sensitivity=StateClassification.AUTHORITATIVE
+    ),
+    # 11. Ingestion & Normalized Knowledge Records (Authoritative normalized data & checkpoints)
+    "ingestion": StateNamespace(
+        namespace_id="ingestion",
+        name="Normalized Knowledge Records & Pipelines",
+        owner_type="LEADER",
+        replication_policy=StateClassification.REPLICATED,
+        consistency_policy=ConsistencyPolicy.STRONG,
+        sensitivity=StateClassification.AUTHORITATIVE
     )
 }
 

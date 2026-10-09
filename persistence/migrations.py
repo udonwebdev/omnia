@@ -7,7 +7,7 @@ from typing import List, Tuple
 
 logger = logging.getLogger("Omnia.Persistence.Migrations")
 
-CURRENT_SCHEMA_VERSION = 8
+CURRENT_SCHEMA_VERSION = 9
 
 MIGRATION_V1 = """
 -- Schema Version 1: Durable Task Graph & Crash Recovery Tables
@@ -742,6 +742,110 @@ CREATE TABLE IF NOT EXISTS connector_circuit_state (
 );
 """
 
+MIGRATION_V9 = """
+-- Schema Version 9: Data Ingestion, Normalization & Knowledge Pipeline Tables (Module 27)
+
+CREATE TABLE IF NOT EXISTS ingestion_envelopes (
+    envelope_id TEXT PRIMARY KEY,
+    source_id TEXT NOT NULL,
+    source_type TEXT NOT NULL,
+    connector_id TEXT,
+    connector_instance_id TEXT,
+    operation_id TEXT,
+    received_at REAL NOT NULL,
+    observed_at REAL NOT NULL,
+    content_type TEXT NOT NULL,
+    schema_name TEXT,
+    schema_version TEXT,
+    payload_reference TEXT,
+    payload_hash TEXT NOT NULL,
+    payload_size INTEGER NOT NULL,
+    classification TEXT NOT NULL DEFAULT 'INTERNAL',
+    trust_boundary TEXT NOT NULL DEFAULT 'UNTRUSTED_EXTERNAL',
+    correlation_id TEXT,
+    causation_id TEXT,
+    trace_id TEXT,
+    raw_payload_json TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'INGESTED',
+    quarantine_reason TEXT,
+    created_at REAL NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_ingest_env_source ON ingestion_envelopes(source_id);
+CREATE INDEX IF NOT EXISTS idx_ingest_env_status ON ingestion_envelopes(status);
+CREATE INDEX IF NOT EXISTS idx_ingest_env_hash ON ingestion_envelopes(payload_hash);
+CREATE INDEX IF NOT EXISTS idx_ingest_env_created ON ingestion_envelopes(created_at);
+
+CREATE TABLE IF NOT EXISTS ingestion_normalized_records (
+    record_id TEXT PRIMARY KEY,
+    envelope_id TEXT NOT NULL,
+    canonical_entity_type TEXT NOT NULL,
+    canonical_id TEXT NOT NULL,
+    canonical_data_json TEXT NOT NULL,
+    quality_score REAL NOT NULL DEFAULT 1.0,
+    quality_metadata_json TEXT NOT NULL DEFAULT '{}',
+    freshness_status TEXT NOT NULL DEFAULT 'FRESH',
+    source_authority TEXT NOT NULL DEFAULT 'EXTERNAL_UNVERIFIED',
+    observed_at REAL NOT NULL,
+    normalized_at REAL NOT NULL,
+    expires_at REAL,
+    FOREIGN KEY (envelope_id) REFERENCES ingestion_envelopes(envelope_id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_ingest_norm_type ON ingestion_normalized_records(canonical_entity_type);
+CREATE INDEX IF NOT EXISTS idx_ingest_norm_can_id ON ingestion_normalized_records(canonical_id);
+CREATE INDEX IF NOT EXISTS idx_ingest_norm_freshness ON ingestion_normalized_records(freshness_status);
+
+CREATE TABLE IF NOT EXISTS ingestion_provenance (
+    provenance_id TEXT PRIMARY KEY,
+    record_id TEXT NOT NULL,
+    envelope_id TEXT NOT NULL,
+    source_id TEXT NOT NULL,
+    connector_id TEXT,
+    operation_id TEXT,
+    resource_id TEXT,
+    transformations_json TEXT NOT NULL DEFAULT '[]',
+    lineage_chain_json TEXT NOT NULL DEFAULT '[]',
+    observed_at REAL NOT NULL,
+    received_at REAL NOT NULL,
+    created_at REAL NOT NULL,
+    FOREIGN KEY (record_id) REFERENCES ingestion_normalized_records(record_id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_ingest_prov_rec ON ingestion_provenance(record_id);
+CREATE INDEX IF NOT EXISTS idx_ingest_prov_env ON ingestion_provenance(envelope_id);
+
+CREATE TABLE IF NOT EXISTS ingestion_conflicts (
+    conflict_id TEXT PRIMARY KEY,
+    entity_id TEXT NOT NULL,
+    field_name TEXT NOT NULL,
+    source_a TEXT NOT NULL,
+    value_a_json TEXT NOT NULL,
+    source_b TEXT NOT NULL,
+    value_b_json TEXT NOT NULL,
+    detected_at REAL NOT NULL,
+    resolution_strategy TEXT NOT NULL DEFAULT 'PRESERVE_CONFLICT',
+    resolution_status TEXT NOT NULL DEFAULT 'UNRESOLVED',
+    resolved_at REAL,
+    resolved_value_json TEXT,
+    resolution_rationale TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_ingest_conf_entity ON ingestion_conflicts(entity_id);
+CREATE INDEX IF NOT EXISTS idx_ingest_conf_status ON ingestion_conflicts(resolution_status);
+
+CREATE TABLE IF NOT EXISTS ingestion_checkpoints (
+    pipeline_id TEXT NOT NULL,
+    source_id TEXT NOT NULL,
+    cursor_val TEXT NOT NULL,
+    last_envelope_id TEXT,
+    processed_count INTEGER NOT NULL DEFAULT 0,
+    watermark_ts REAL NOT NULL,
+    updated_at REAL NOT NULL,
+    PRIMARY KEY (pipeline_id, source_id)
+);
+"""
+
 def backup_database(db_path: str, backup_dir: str = "persistence_backups") -> str:
     """Creates a timestamped snapshot of the SQLite database prior to any schema modification."""
     if not os.path.exists(db_path):
@@ -863,6 +967,17 @@ def apply_migrations(db_path: str) -> int:
             conn.commit()
             logger.info("Migration v8 applied successfully.")
             current_version = 8
+
+        if current_version < 9:
+            logger.info("Applying Migration v9 (Data Ingestion, Normalization & Pipeline Tables)...")
+            cursor.executescript(MIGRATION_V9)
+            cursor.execute(
+                "INSERT INTO schema_migrations (version, applied_at, description) VALUES (?, ?, ?)",
+                (9, time.time(), "Data Ingestion, Normalization and Knowledge Pipeline tables")
+            )
+            conn.commit()
+            logger.info("Migration v9 applied successfully.")
+            current_version = 9
 
         return current_version
     except Exception as e:
