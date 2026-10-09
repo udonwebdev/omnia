@@ -7,7 +7,7 @@ from typing import List, Tuple
 
 logger = logging.getLogger("Omnia.Persistence.Migrations")
 
-CURRENT_SCHEMA_VERSION = 11
+CURRENT_SCHEMA_VERSION = 12
 
 MIGRATION_V1 = """
 -- Schema Version 1: Durable Task Graph & Crash Recovery Tables
@@ -978,6 +978,89 @@ CREATE INDEX IF NOT EXISTS idx_conflict_dec ON decision_conflicts(decision_id);
 CREATE INDEX IF NOT EXISTS idx_conflict_claim ON decision_conflicts(claim_id);
 """
 
+MIGRATION_V12 = """
+-- Schema Version 12: Knowledge Graph & Entity Resolution Engine
+
+CREATE TABLE IF NOT EXISTS knowledge_entities (
+    entity_id TEXT PRIMARY KEY,
+    canonical_name TEXT NOT NULL,
+    entity_type TEXT NOT NULL,
+    aliases_json TEXT NOT NULL DEFAULT '[]',
+    attributes_json TEXT NOT NULL DEFAULT '{}',
+    classification TEXT NOT NULL DEFAULT 'INTERNAL',
+    trust_boundary TEXT NOT NULL DEFAULT 'INTERNAL',
+    confidence REAL NOT NULL DEFAULT 1.0,
+    provenance_ids_json TEXT NOT NULL DEFAULT '[]',
+    status TEXT NOT NULL DEFAULT 'ACTIVE',
+    merged_into_id TEXT,
+    owner_node TEXT NOT NULL DEFAULT 'local',
+    version INTEGER NOT NULL DEFAULT 1,
+    valid_from REAL NOT NULL,
+    valid_until REAL,
+    created_at REAL NOT NULL,
+    updated_at REAL NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_ke_type ON knowledge_entities(entity_type);
+CREATE INDEX IF NOT EXISTS idx_ke_status ON knowledge_entities(status);
+CREATE INDEX IF NOT EXISTS idx_ke_name ON knowledge_entities(canonical_name);
+CREATE INDEX IF NOT EXISTS idx_ke_merged ON knowledge_entities(merged_into_id);
+
+CREATE TABLE IF NOT EXISTS knowledge_relationships (
+    relationship_id TEXT PRIMARY KEY,
+    source_id TEXT NOT NULL,
+    predicate TEXT NOT NULL,
+    target_id TEXT NOT NULL,
+    properties_json TEXT NOT NULL DEFAULT '{}',
+    confidence REAL NOT NULL DEFAULT 1.0,
+    weight REAL NOT NULL DEFAULT 1.0,
+    directed INTEGER NOT NULL DEFAULT 1,
+    provenance_ids_json TEXT NOT NULL DEFAULT '[]',
+    status TEXT NOT NULL DEFAULT 'ACTIVE',
+    valid_from REAL NOT NULL,
+    valid_until REAL,
+    created_at REAL NOT NULL,
+    updated_at REAL NOT NULL,
+    FOREIGN KEY (source_id) REFERENCES knowledge_entities(entity_id) ON DELETE CASCADE,
+    FOREIGN KEY (target_id) REFERENCES knowledge_entities(entity_id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_kr_source ON knowledge_relationships(source_id);
+CREATE INDEX IF NOT EXISTS idx_kr_target ON knowledge_relationships(target_id);
+CREATE INDEX IF NOT EXISTS idx_kr_pred ON knowledge_relationships(predicate);
+CREATE INDEX IF NOT EXISTS idx_kr_status ON knowledge_relationships(status);
+
+CREATE TABLE IF NOT EXISTS entity_identities (
+    identity_id TEXT PRIMARY KEY,
+    entity_id TEXT NOT NULL,
+    identifier_type TEXT NOT NULL,
+    identifier_value TEXT NOT NULL,
+    confidence REAL NOT NULL DEFAULT 1.0,
+    created_at REAL NOT NULL,
+    FOREIGN KEY (entity_id) REFERENCES knowledge_entities(entity_id) ON DELETE CASCADE,
+    UNIQUE(identifier_type, identifier_value)
+);
+
+CREATE INDEX IF NOT EXISTS idx_ei_type_val ON entity_identities(identifier_type, identifier_value);
+CREATE INDEX IF NOT EXISTS idx_ei_entity ON entity_identities(entity_id);
+
+CREATE TABLE IF NOT EXISTS entity_resolution_candidates (
+    candidate_id TEXT PRIMARY KEY,
+    source_entity_id TEXT NOT NULL,
+    target_entity_id TEXT NOT NULL,
+    similarity_score REAL NOT NULL,
+    match_reasons_json TEXT NOT NULL DEFAULT '[]',
+    status TEXT NOT NULL DEFAULT 'PENDING',
+    evaluated_at REAL NOT NULL,
+    resolution_notes TEXT,
+    FOREIGN KEY (source_entity_id) REFERENCES knowledge_entities(entity_id) ON DELETE CASCADE,
+    FOREIGN KEY (target_entity_id) REFERENCES knowledge_entities(entity_id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_erc_pair ON entity_resolution_candidates(source_entity_id, target_entity_id);
+CREATE INDEX IF NOT EXISTS idx_erc_status ON entity_resolution_candidates(status);
+"""
+
 def backup_database(db_path: str, backup_dir: str = "persistence_backups") -> str:
     """Creates a timestamped snapshot of the SQLite database prior to any schema modification."""
     if not os.path.exists(db_path):
@@ -1132,6 +1215,17 @@ def apply_migrations(db_path: str) -> int:
             conn.commit()
             logger.info("Migration v11 applied successfully.")
             current_version = 11
+
+        if current_version < 12:
+            logger.info("Applying Migration v12 (Knowledge Graph & Entity Resolution Tables)...")
+            cursor.executescript(MIGRATION_V12)
+            cursor.execute(
+                "INSERT INTO schema_migrations (version, applied_at, description) VALUES (?, ?, ?)",
+                (12, time.time(), "Knowledge Graph and Entity Resolution tables")
+            )
+            conn.commit()
+            logger.info("Migration v12 applied successfully.")
+            current_version = 12
 
         return current_version
     except Exception as e:

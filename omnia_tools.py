@@ -1918,6 +1918,88 @@ def get_decision_record(decision_id: str) -> str:
         return json.dumps({"success": False, "error": str(e)}, indent=2)
 
 
+# --- Module 30: Knowledge Graph & Entity Resolution Engine Tools ---
+@tool
+def create_knowledge_entity(
+    canonical_name: str,
+    entity_type: str = "CONCEPT",
+    aliases_json: str = "[]",
+    attributes_json: str = "{}",
+    confidence: float = 1.0,
+    identities_json: str = "[]"
+) -> str:
+    """Creates or updates a persistent entity with aliases, attributes, and identities in the knowledge graph."""
+    from knowledge.service import knowledge_graph_service
+    try:
+        aliases = json.loads(aliases_json) if isinstance(aliases_json, str) else aliases_json
+        attrs = json.loads(attributes_json) if isinstance(attributes_json, str) else attributes_json
+        idents = json.loads(identities_json) if isinstance(identities_json, str) else identities_json
+        ent = knowledge_graph_service.create_entity(
+            canonical_name=canonical_name,
+            entity_type=entity_type,
+            aliases=aliases,
+            attributes=attrs,
+            confidence=confidence,
+            identities=idents,
+        )
+        return json.dumps(ent.to_dict(), indent=2)
+    except Exception as e:
+        return json.dumps({"success": False, "error": str(e)}, indent=2)
+
+@tool
+def assert_knowledge_relationship(
+    source_id: str,
+    predicate: str,
+    target_id: str,
+    confidence: float = 1.0,
+    weight: float = 1.0,
+    properties_json: str = "{}"
+) -> str:
+    """Asserts a typed directed relationship between two existing knowledge entities."""
+    from knowledge.service import knowledge_graph_service
+    try:
+        props = json.loads(properties_json) if isinstance(properties_json, str) else properties_json
+        rel = knowledge_graph_service.assert_relationship(
+            source_id=source_id,
+            predicate=predicate,
+            target_id=target_id,
+            confidence=confidence,
+            weight=weight,
+            properties=props,
+        )
+        return json.dumps(rel.to_dict(), indent=2)
+    except Exception as e:
+        return json.dumps({"success": False, "error": str(e)}, indent=2)
+
+@tool
+def query_knowledge_graph(
+    center_entity_id: str,
+    max_depth: int = 2,
+    min_confidence: float = 0.0
+) -> str:
+    """Extracts a bounded k-hop neighborhood subgraph around a center entity in the knowledge graph."""
+    from knowledge.service import knowledge_graph_service
+    try:
+        subgraph = knowledge_graph_service.query_neighborhood(
+            center_entity_id=center_entity_id,
+            max_depth=max_depth,
+            min_confidence=min_confidence,
+        )
+        return json.dumps(subgraph.to_dict(), indent=2)
+    except Exception as e:
+        return json.dumps({"success": False, "error": str(e)}, indent=2)
+
+@tool
+def resolve_entity_candidates(auto_merge_threshold: float = 0.85) -> str:
+    """Scans and resolves pending entity resolution candidates using non-destructive identity merging."""
+    from knowledge.service import knowledge_graph_service
+    try:
+        actions = knowledge_graph_service.resolve_candidates(auto_merge_threshold=auto_merge_threshold)
+        return json.dumps({"success": True, "resolved_count": len(actions), "actions": actions}, indent=2)
+    except Exception as e:
+        return json.dumps({"success": False, "error": str(e)}, indent=2)
+
+
 OMNIA_ALL_TOOLS = [
     unlock_all_devices,
     play_youtube_video,
@@ -2044,6 +2126,10 @@ OMNIA_ALL_TOOLS = [
     get_retrieval_telemetry,
     evaluate_evidence_claims,
     get_decision_record,
+    create_knowledge_entity,
+    assert_knowledge_relationship,
+    query_knowledge_graph,
+    resolve_entity_candidates,
 ]
 
 # Backward compatibility alias

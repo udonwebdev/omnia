@@ -11,6 +11,7 @@ from typing import List, Dict, Any, Optional
 
 from retrieval.models import EvidenceItem, SearchQuery, CorpusType
 from ingestion.models import DataClassification, TrustBoundary, FreshnessStatus
+from persistence.migrations import apply_migrations
 
 logger = logging.getLogger("Omnia.Retrieval.Persistence")
 
@@ -20,6 +21,7 @@ class RetrievalPersistence:
 
     def __init__(self, db_path: str = "omnia.db"):
         self.db_path = db_path
+        apply_migrations(self.db_path)
 
     def _get_connection(self) -> sqlite3.Connection:
         conn = sqlite3.connect(self.db_path)

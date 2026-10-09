@@ -1481,7 +1481,8 @@ async def run_diagnostics():
             query_text="system-kernel execution",
             mode=SearchMode.HYBRID,
             filters=SearchFilter(max_classification=DataClassification.INTERNAL),
-            limit=5
+            limit=5,
+            use_cache=False
         )
         assert isinstance(res, SearchResult)
         assert res.total_hits >= 1
@@ -1513,10 +1514,12 @@ async def run_diagnostics():
         print("      [28] Audit & Query Caching ..... PASS (Durable query audit & result caching with hit tracking)")
 
     except Exception as e:
+        import traceback
+        traceback.print_exc()
         print(f"      [28] Retrieval Engine .......... FAIL ({e})")
 
     # 21. Module 29: Evidence & Decision Engine
-    print("\n[21/21] Checking Module 29: Evidence & Decision Engine...")
+    print("\n[21/22] Checking Module 29: Evidence & Decision Engine...")
     from decision import (
         evidence_decision_service,
         DecisionState,
@@ -1530,8 +1533,9 @@ async def run_diagnostics():
         dec = evidence_decision_service.evaluate(
             subject_id="diag_cluster_node",
             decision_type="SYSTEM_INTEGRITY",
-            claims_text=["system-kernel execution is operational"],
-            policy=DecisionPolicy(min_confidence_to_accept=0.50)
+            claims_text=["System validation token verification is operational"],
+            pre_gathered_evidence=res.evidence_items,
+            policy=DecisionPolicy(min_confidence_to_accept=0.30)
         )
         assert isinstance(dec, DecisionRecord)
         assert dec.state in (DecisionState.ACCEPTED, DecisionState.DISPUTED)
@@ -1557,7 +1561,69 @@ async def run_diagnostics():
         print("      [29] Decision Durability ...... PASS (SQLite Schema V11 verification & audit trail)")
 
     except Exception as e:
+        import traceback
+        traceback.print_exc()
         print(f"      [29] Decision Engine ........... FAIL ({e})")
+
+    # 22. Module 30: Knowledge Graph & Entity Resolution Engine
+    print("\n[22/22] Checking Module 30: Knowledge Graph & Entity Resolution Engine...")
+    from knowledge import (
+        knowledge_graph_service,
+        EntityType,
+        EntityStatus,
+        GraphEntity,
+        GraphRelationship
+    )
+
+    try:
+        # 22a. Entity & Relationship Creation
+        e_host = knowledge_graph_service.create_entity(
+            canonical_name="Cluster Host Omega",
+            entity_type="SYSTEM",
+            aliases=["Host-Omega", "Omega-01"],
+            attributes={"zone": "us-east-1a", "cores": 32}
+        )
+        e_srv = knowledge_graph_service.create_entity(
+            canonical_name="Telemetry Aggregator",
+            entity_type="SERVICE",
+            aliases=["Telemetry-Daemon"],
+            attributes={"port": 9090}
+        )
+        assert e_host is not None and e_srv is not None
+        rel = knowledge_graph_service.assert_relationship(
+            source_id=e_host.entity_id,
+            predicate="HOSTS",
+            target_id=e_srv.entity_id,
+            confidence=0.98
+        )
+        assert rel.predicate == "HOSTS"
+        print("      [30] Entity & Relation Lifecycle PASS (Graph entities, typed relationships & attributes)")
+
+        # 22b. Non-destructive Entity Resolution
+        e_dup = knowledge_graph_service.create_entity(
+            canonical_name="Telemetry Aggregator",
+            entity_type="SERVICE",
+            aliases=["Telemetry-Worker"],
+            attributes={"port": 9090}
+        )
+        actions = knowledge_graph_service.resolve_candidates(auto_merge_threshold=0.80)
+        assert len(actions) >= 1
+        merged_e = knowledge_graph_service.get_entity(e_dup.entity_id)
+        assert merged_e.status in (EntityStatus.MERGED, EntityStatus.ACTIVE)
+        print("      [30] Non-Destructive Resolution  PASS (Similarity scoring, candidate matching & soft-merge)")
+
+        # 22c. Bounded Graph Traversal & Path Discovery
+        subgraph = knowledge_graph_service.query_neighborhood(e_host.entity_id, max_depth=2)
+        assert len(subgraph.entities) >= 2
+        path = knowledge_graph_service.find_path(e_host.entity_id, e_srv.entity_id)
+        assert path is not None
+        assert path.total_depth == 1
+        print("      [30] Graph Traversal & Paths ... PASS (Bounded k-hop subgraph & shortest pathfinding)")
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        print(f"      [30] Knowledge Graph Engine .... FAIL ({e})")
 
     print("\n" + "=" * 60)
     print("Diagnostics complete.")

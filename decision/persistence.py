@@ -19,6 +19,7 @@ from decision.models import (
     DecisionConflict,
     ConflictSeverity
 )
+from persistence.migrations import apply_migrations
 
 logger = logging.getLogger("Omnia.Decision.Persistence")
 
@@ -28,6 +29,7 @@ class DecisionPersistence:
 
     def __init__(self, db_path: str = "omnia.db"):
         self.db_path = db_path
+        apply_migrations(self.db_path)
 
     def _get_connection(self) -> sqlite3.Connection:
         conn = sqlite3.connect(self.db_path)
