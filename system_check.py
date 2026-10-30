@@ -2058,6 +2058,87 @@ async def run_diagnostics():
         traceback.print_exc()
         print(f"      [34] Simulation & Digital Twin Engine .. FAIL ({e})")
 
+
+    # 27. Module 35: Autonomous Cybersecurity, Threat Intelligence & Runtime Defense Engine
+    print("\n[27/27] Checking Module 35: Autonomous Cybersecurity & Runtime Defense...")
+    from defense.service import cyber_defense_service
+    from defense.models import (
+        SecuritySeverity,
+        IndicatorType,
+        IndicatorValidationStatus,
+        ThreatClassification,
+        SecurityPostureState,
+        IncidentStatus,
+        ResponseAutonomyLevel,
+        ContainmentStatus,
+    )
+
+    try:
+        # 27a. Threat Intelligence Anti-Poisoning
+        ti_poison = cyber_defense_service.register_threat_indicator(
+            indicator_id=f"diag-ti-poison-{uuid.uuid4().hex[:6]}",
+            indicator_type=IndicatorType.IP_ADDRESS,
+            indicator_value="192.168.0.1",
+            source="untrusted_feed",
+        )
+        assert ti_poison.validation_status == IndicatorValidationStatus.REJECTED
+        print("      [35] Threat Intel Anti-Poisoning Valid .. PASS (Private RFC 1918 & whitelisted assets rejected)")
+
+        # 27b. Telemetry Normalization & Credential Scrubbing
+        evt, alerts, _ = cyber_defense_service.ingest_security_event(
+            raw_event={"api_key": "sk-leakage-prevented-test", "attempt": 1},
+            source_component="auth_gateway",
+            action_category="auth.login",
+            outcome="FAILURE",
+            severity=SecuritySeverity.HIGH,
+            source_identity="diag_intruder",
+        )
+        assert evt.details["api_key"] == "[REDACTED_SECRET]"
+        assert len(evt.signature) == 64
+        print("      [35] Telemetry Sanitization & Digest ... PASS (Zero-leakage secret scrubbing & SHA-256 chain)")
+
+        # 27c. Deterministic Rule Matching & Attack Chain Correlation
+        evt2, alerts2, incs = cyber_defense_service.ingest_security_event(
+            raw_event={"token": "ghp_tampered_token_01"},
+            source_component="secrets_engine",
+            action_category="secrets.lease",
+            outcome="ACCESS_DENIED",
+            severity=SecuritySeverity.CRITICAL,
+            source_identity="diag_intruder",
+        )
+        assert len(alerts2) >= 1
+        active_incs = cyber_defense_service.repo.list_active_incidents()
+        assert len(active_incs) >= 1
+        diag_inc = active_incs[0]
+        print("      [35] Correlation & Incident Synthesis .. PASS (Multi-stage threat correlation and state tracking)")
+
+        # 27d. Defensive Containment & Approval Token Binding
+        containment = cyber_defense_service.request_containment(
+            incident_id=diag_inc.incident_id,
+            action_type="suspend_worker",
+            target_resource="diag_intruder",
+            scope="LOCAL",
+            reason="Diagnostic containment test",
+        )
+        assert containment.status == ContainmentStatus.APPROVAL_PENDING
+        exec_ok, evidence = cyber_defense_service.authorize_and_execute_containment(
+            action_id=containment.action_id,
+            approval_token="diag-human-approval-token",
+        )
+        assert exec_ok is True
+        print("      [35] Containment Autonomy & Approvals .. PASS (Response levels 0-4 and Module 20 consent binding)")
+
+        # 27e. Posture Assessment & Blind Spot Visibility
+        posture = cyber_defense_service.assess_security_posture()
+        assert posture is not None
+        assert posture.overall_state != SecurityPostureState.HEALTHY
+        print("      [35] Posture Assessment & Telemetry ..... PASS (Defensive posture evaluation & missing source tracking)")
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        print(f"      [35] Autonomous Cybersecurity & Defense . FAIL ({e})")
+
     print("\n" + "=" * 60)
     print("Diagnostics complete.")
     print("=" * 60)

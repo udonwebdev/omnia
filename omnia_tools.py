@@ -1845,6 +1845,227 @@ def search_transcript_text(transcript_id: str, query: str) -> str:
     except Exception as e:
         return json.dumps({"success": False, "error": str(e)}, indent=2)
 
+# --- Video Studio Module 14: Motion Graphics & Titles Tools ---
+@tool
+def create_graphics_composition(
+    project_id: str,
+    name: str = "Title Composition",
+    width: int = 1920,
+    height: int = 1080,
+    duration_frames: int = 120,
+    sequence_id: str = "",
+    timeline_start_frame: int = 0
+) -> str:
+    """Creates a new motion graphics and animated title composition."""
+    from video_studio.motion_graphics_service import motion_graphics_service
+    import json
+    try:
+        comp = motion_graphics_service.create_composition(
+            project_id=project_id,
+            name=name,
+            width=width,
+            height=height,
+            duration_frames=duration_frames,
+            sequence_id=sequence_id or None,
+            timeline_start_frame=timeline_start_frame,
+        )
+        return json.dumps({"success": True, "composition": comp.to_dict()}, indent=2)
+    except Exception as e:
+        return json.dumps({"success": False, "error": str(e)}, indent=2)
+
+@tool
+def add_graphics_layer(
+    composition_id: str,
+    name: str,
+    layer_type: str,
+    text_content: str = "",
+    font_size: int = 48,
+    fill_color: str = "#FFFFFF",
+    pos_x: float = 0.0,
+    pos_y: float = 0.0,
+    width: float = 200.0,
+    height: float = 100.0,
+    corner_radius: float = 0.0,
+    animation_preset: str = "NONE"
+) -> str:
+    """Adds a text, rectangle, ellipse, or line layer to a motion graphics composition."""
+    from video_studio.motion_graphics_service import motion_graphics_service
+    from video_studio.motion_graphics_models import GraphicLayerType, GraphicTransform, TypographyAnimationPreset
+    import json
+    try:
+        l_type = GraphicLayerType(layer_type.upper())
+        preset = TypographyAnimationPreset(animation_preset.upper())
+        tf = GraphicTransform(x=pos_x, y=pos_y)
+        layer = motion_graphics_service.add_layer(
+            composition_id=composition_id,
+            name=name,
+            layer_type=l_type,
+            transform=tf,
+            text_content=text_content,
+            font_size=font_size,
+            fill_color=fill_color,
+            width=width,
+            height=height,
+            corner_radius=corner_radius,
+            animation_preset=preset,
+        )
+        return json.dumps({"success": True, "layer": layer.to_dict()}, indent=2)
+    except Exception as e:
+        return json.dumps({"success": False, "error": str(e)}, indent=2)
+
+@tool
+def instantiate_graphics_template(
+    project_id: str,
+    template_id: str,
+    placeholders_json: str = "{}",
+    sequence_id: str = "",
+    timeline_start_frame: int = 0
+) -> str:
+    """Instantiates a motion graphics template (e.g. Centered Title, Lower Third) with placeholder text."""
+    from video_studio.motion_graphics_service import motion_graphics_service
+    import json
+    try:
+        placeholders = json.loads(placeholders_json) if placeholders_json else {}
+        comp = motion_graphics_service.instantiate_template(
+            template_id=template_id,
+            project_id=project_id,
+            placeholders=placeholders,
+            sequence_id=sequence_id or None,
+            timeline_start_frame=timeline_start_frame,
+        )
+        return json.dumps({"success": True, "composition": comp.to_dict()}, indent=2)
+    except Exception as e:
+        return json.dumps({"success": False, "error": str(e)}, indent=2)
+
+@tool
+def apply_clip_speed_remap(
+    sequence_id: str,
+    item_id: str,
+    speed: float = 1.0,
+    is_reverse: bool = False,
+    ripple: bool = False,
+    interpolation_mode: str = "DUPLICATION",
+    audio_speed_mode: str = "RESAMPLE_PITCH"
+) -> str:
+    """Applies non-destructive constant or reverse speed remapping to a timeline clip."""
+    from video_studio.speed_service import speed_service
+    from video_studio.speed_models import FrameInterpolationMode, AudioSpeedMode
+    import json
+    try:
+        interp = FrameInterpolationMode(interpolation_mode.upper())
+        audio_m = AudioSpeedMode(audio_speed_mode.upper())
+        ok, msg, doc = speed_service.apply_constant_speed(
+            sequence_id=sequence_id,
+            item_id=item_id,
+            speed=speed,
+            is_reverse=is_reverse,
+            ripple=ripple,
+            audio_mode=audio_m,
+            interpolation_mode=interp,
+        )
+        return json.dumps({"success": ok, "message": msg, "remap": doc.to_dict() if doc else None}, indent=2)
+    except Exception as e:
+        return json.dumps({"success": False, "error": str(e)}, indent=2)
+
+@tool
+def add_clip_freeze_frame(
+    sequence_id: str,
+    item_id: str,
+    playhead_frame: int,
+    duration_frames: int = 24
+) -> str:
+    """Freezes playback at a specific playhead frame for a specified duration."""
+    from video_studio.speed_service import speed_service
+    import json
+    try:
+        ok, msg, freeze = speed_service.add_freeze_frame(
+            sequence_id=sequence_id,
+            item_id=item_id,
+            playhead_frame=playhead_frame,
+            duration_frames=duration_frames,
+        )
+        return json.dumps({"success": ok, "message": msg, "freeze": freeze.to_dict() if freeze else None}, indent=2)
+    except Exception as e:
+        return json.dumps({"success": False, "error": str(e)}, indent=2)
+
+@tool
+def apply_clip_color_grade(
+    item_id: str,
+    exposure: float = 0.0,
+    contrast: float = 1.0,
+    temperature: float = 0.0,
+    tint: float = 0.0,
+    saturation: float = 1.0,
+    vibrance: float = 0.0
+) -> str:
+    """Applies primary color correction adjustments to a timeline clip."""
+    from video_studio.color_service import color_service
+    from video_studio.color_models import PrimaryGrade
+    import json
+    try:
+        grade = color_service.get_clip_grade(item_id)
+        grade.primary = PrimaryGrade(
+            exposure=exposure,
+            contrast=contrast,
+            temperature=temperature,
+            tint=tint,
+            saturation=saturation,
+            vibrance=vibrance,
+        )
+        updated = color_service.update_clip_grade(item_id, grade)
+        return json.dumps({"success": True, "grade": updated.to_dict()}, indent=2)
+    except Exception as e:
+        return json.dumps({"success": False, "error": str(e)}, indent=2)
+
+@tool
+def apply_cinematic_look(item_id: str, look_id: str) -> str:
+    """Applies a curated creative Look preset (e.g. 'look_golden_hour', 'look_teal_orange', 'look_noir') to a clip."""
+    from video_studio.color_service import color_service
+    import json
+    try:
+        grade = color_service.apply_look_to_clip(look_id, item_id)
+        if not grade:
+            return json.dumps({"success": False, "error": f"Look '{look_id}' not found."}, indent=2)
+        return json.dumps({"success": True, "grade": grade.to_dict()}, indent=2)
+    except Exception as e:
+        return json.dumps({"success": False, "error": str(e)}, indent=2)
+
+@tool
+def export_video_sequence(
+    project_id: str,
+    sequence_id: str,
+    output_path: str,
+    preset_id: str = "preset_1080p_hq"
+) -> str:
+    """Renders and encodes a video studio sequence into a validated media file."""
+    from video_studio.export_service import export_service
+    import json
+    try:
+        ok, msg, job = export_service.create_render_job(
+            project_id=project_id,
+            sequence_id=sequence_id,
+            output_path=output_path,
+            preset_id=preset_id,
+        )
+        if not ok or not job:
+            return json.dumps({"success": False, "error": msg}, indent=2)
+
+        report = export_service.execute_job(job.job_id)
+        return json.dumps({"success": report.is_valid, "job": job.to_dict(), "validation": report.to_dict()}, indent=2)
+    except Exception as e:
+        return json.dumps({"success": False, "error": str(e)}, indent=2)
+
+@tool
+def list_graphics_templates() -> str:
+    """Lists available built-in motion graphics and title templates."""
+    from video_studio.motion_graphics_service import motion_graphics_service
+    import json
+    try:
+        templates = motion_graphics_service.list_templates()
+        return json.dumps({"success": True, "templates": templates}, indent=2)
+    except Exception as e:
+        return json.dumps({"success": False, "error": str(e)}, indent=2)
+
 @tool
 def list_external_connectors() -> str:
     """Lists all registered external connectors and their operations."""
@@ -2983,6 +3204,166 @@ def inject_simulation_fault(
 
 
 
+
+# --- Module 35: Autonomous Cybersecurity, Threat Intelligence & Runtime Defense Tools ---
+@tool
+def ingest_security_telemetry(
+    source_component: str,
+    action_category: str,
+    outcome: str,
+    severity: str = "INFO",
+    source_identity: str = "",
+    node_identity: str = "",
+    resource_reference: str = "",
+    details: str = "{}"
+) -> str:
+    """Ingests, normalizes, and correlates runtime security telemetry with zero-leakage redaction."""
+    from defense.service import cyber_defense_service
+    from defense.models import SecuritySeverity
+    import json
+    try:
+        sev = SecuritySeverity(severity.upper())
+        dt = json.loads(details) if isinstance(details, str) else details
+        evt, alerts, incs = cyber_defense_service.ingest_security_event(
+            raw_event=dt,
+            source_component=source_component,
+            action_category=action_category,
+            outcome=outcome,
+            severity=sev,
+            source_identity=source_identity or None,
+            node_identity=node_identity or None,
+            resource_reference=resource_reference or None,
+        )
+        return json.dumps({
+            "success": True,
+            "event_id": evt.event_id,
+            "alerts_generated": [a.to_dict() for a in alerts],
+            "incidents_created": [i.to_dict() for i in incs],
+        }, indent=2)
+    except Exception as e:
+        return json.dumps({"success": False, "error": str(e)}, indent=2)
+
+@tool
+def register_threat_intelligence_indicator(
+    indicator_id: str,
+    indicator_type: str,
+    indicator_value: str,
+    source: str = "cisa_known_exploited",
+    confidence: float = 0.85,
+    threat_classification: str = "ANOMALOUS_BEHAVIOR"
+) -> str:
+    """Registers and validates a defensive threat intelligence indicator with anti-poisoning checks."""
+    from defense.service import cyber_defense_service
+    from defense.models import IndicatorType, ThreatClassification
+    import json
+    try:
+        itype = IndicatorType(indicator_type.upper())
+        tclass = ThreatClassification(threat_classification.upper())
+        ind = cyber_defense_service.register_threat_indicator(
+            indicator_id=indicator_id,
+            indicator_type=itype,
+            indicator_value=indicator_value,
+            source=source,
+            confidence=float(confidence),
+            threat_classification=tclass,
+        )
+        return json.dumps({"success": True, "indicator": ind.to_dict()}, indent=2)
+    except Exception as e:
+        return json.dumps({"success": False, "error": str(e)}, indent=2)
+
+@tool
+def assess_security_posture() -> str:
+    """Evaluates comprehensive system defensive posture, active incidents, and telemetry coverage."""
+    from defense.service import cyber_defense_service
+    import json
+    try:
+        assessment = cyber_defense_service.assess_security_posture()
+        return json.dumps({"success": True, "assessment": assessment.to_dict()}, indent=2)
+    except Exception as e:
+        return json.dumps({"success": False, "error": str(e)}, indent=2)
+
+@tool
+def request_defensive_containment(
+    incident_id: str,
+    action_type: str,
+    target_resource: str,
+    scope: str = "LOCAL",
+    reason: str = "Automated threat response",
+    is_reversible: bool = True
+) -> str:
+    """Plans a narrowly scoped defensive containment action adhering to response autonomy levels."""
+    from defense.service import cyber_defense_service
+    import json
+    try:
+        action = cyber_defense_service.request_containment(
+            incident_id=incident_id,
+            action_type=action_type,
+            target_resource=target_resource,
+            scope=scope,
+            reason=reason,
+            is_reversible=bool(is_reversible),
+        )
+        return json.dumps({"success": True, "containment_action": action.to_dict()}, indent=2)
+    except Exception as e:
+        return json.dumps({"success": False, "error": str(e)}, indent=2)
+
+@tool
+def authorize_and_execute_containment(
+    action_id: str,
+    approval_token: str
+) -> str:
+    """Binds an authorized approval token and executes verified defensive containment."""
+    from defense.service import cyber_defense_service
+    import json
+    try:
+        ok, evidence = cyber_defense_service.authorize_and_execute_containment(action_id, approval_token)
+        return json.dumps({"success": ok, "verification_evidence": evidence}, indent=2)
+    except Exception as e:
+        return json.dumps({"success": False, "error": str(e)}, indent=2)
+
+@tool
+def preserve_incident_forensics(
+    incident_id: str,
+    artifact_type: str,
+    source_identifier: str,
+    raw_payload_json: str
+) -> str:
+    """Preserves immutable forensic evidence with SHA-256 integrity digest and chain-of-custody."""
+    from defense.service import cyber_defense_service
+    import json
+    try:
+        payload = json.loads(raw_payload_json) if isinstance(raw_payload_json, str) else raw_payload_json
+        evid = cyber_defense_service.forensics_manager.preserve_evidence(
+            incident_id=incident_id,
+            artifact_type=artifact_type,
+            source_identifier=source_identifier,
+            raw_payload=payload,
+        )
+        cyber_defense_service.repo.save_evidence_record(evid)
+        return json.dumps({"success": True, "evidence": evid.to_dict()}, indent=2)
+    except Exception as e:
+        return json.dumps({"success": False, "error": str(e)}, indent=2)
+
+@tool
+def resolve_security_incident(
+    incident_id: str,
+    actor: str,
+    resolution_summary: str
+) -> str:
+    """Safely transitions an incident through verified recovery to RESOLVED status."""
+    from defense.service import cyber_defense_service
+    import json
+    try:
+        ok = cyber_defense_service.resolve_incident(
+            incident_id=incident_id,
+            actor=actor,
+            resolution_summary=resolution_summary,
+        )
+        return json.dumps({"success": ok, "incident_id": incident_id, "resolved": ok}, indent=2)
+    except Exception as e:
+        return json.dumps({"success": False, "error": str(e)}, indent=2)
+
+
 OMNIA_ALL_TOOLS = [
     unlock_all_devices,
     play_youtube_video,
@@ -3113,6 +3494,15 @@ OMNIA_ALL_TOOLS = [
     import_subtitle_file,
     export_subtitle_file,
     search_transcript_text,
+    create_graphics_composition,
+    add_graphics_layer,
+    instantiate_graphics_template,
+    list_graphics_templates,
+    apply_clip_speed_remap,
+    apply_clip_color_grade,
+    export_video_sequence,
+    apply_cinematic_look,
+    add_clip_freeze_frame,
     ingest_external_data,
     process_ingestion_pipeline,
     get_data_provenance,
@@ -3152,6 +3542,13 @@ OMNIA_ALL_TOOLS = [
     execute_simulation,
     explore_simulation_alternatives,
     inject_simulation_fault,
+    ingest_security_telemetry,
+    register_threat_intelligence_indicator,
+    assess_security_posture,
+    request_defensive_containment,
+    authorize_and_execute_containment,
+    preserve_incident_forensics,
+    resolve_security_incident,
 ]
 
 # Backward compatibility alias

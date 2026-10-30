@@ -7,7 +7,7 @@ from typing import List, Tuple
 
 logger = logging.getLogger("Omnia.Persistence.Migrations")
 
-CURRENT_SCHEMA_VERSION = 16
+CURRENT_SCHEMA_VERSION = 17
 
 MIGRATION_V1 = """
 -- Schema Version 1: Durable Task Graph & Crash Recovery Tables
@@ -1540,6 +1540,133 @@ CREATE TABLE IF NOT EXISTS simulation_fidelity_records (
 
 CREATE INDEX IF NOT EXISTS idx_sfr_sim ON simulation_fidelity_records(simulation_id);
 """
+MIGRATION_V17 = """
+-- Schema Version 17: Autonomous Cybersecurity, Threat Intelligence & Runtime Defense Engine
+
+CREATE TABLE IF NOT EXISTS security_telemetry_events (
+    event_id TEXT PRIMARY KEY,
+    event_type TEXT NOT NULL,
+    source_component TEXT NOT NULL,
+    action_category TEXT NOT NULL,
+    outcome TEXT NOT NULL,
+    severity TEXT NOT NULL,
+    timestamp REAL NOT NULL,
+    schema_version INTEGER NOT NULL,
+    source_identity TEXT,
+    node_identity TEXT,
+    correlation_id TEXT,
+    resource_reference TEXT,
+    details TEXT NOT NULL,
+    data_classification TEXT NOT NULL,
+    signature TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_sec_tel_time ON security_telemetry_events(timestamp);
+CREATE INDEX IF NOT EXISTS idx_sec_tel_source ON security_telemetry_events(source_component);
+CREATE INDEX IF NOT EXISTS idx_sec_tel_ident ON security_telemetry_events(source_identity);
+
+CREATE TABLE IF NOT EXISTS threat_intelligence_indicators (
+    indicator_id TEXT PRIMARY KEY,
+    indicator_type TEXT NOT NULL,
+    indicator_value TEXT NOT NULL,
+    source TEXT NOT NULL,
+    source_reliability REAL NOT NULL,
+    confidence REAL NOT NULL,
+    first_seen REAL NOT NULL,
+    last_seen REAL NOT NULL,
+    expires_at REAL,
+    context TEXT NOT NULL,
+    threat_classification TEXT NOT NULL,
+    validation_status TEXT NOT NULL,
+    applicable_scope TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_ti_val ON threat_intelligence_indicators(indicator_value);
+CREATE INDEX IF NOT EXISTS idx_ti_status ON threat_intelligence_indicators(validation_status);
+
+CREATE TABLE IF NOT EXISTS security_detection_rules (
+    rule_id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    description TEXT NOT NULL,
+    threat_classification TEXT NOT NULL,
+    severity TEXT NOT NULL,
+    required_telemetry_types TEXT NOT NULL,
+    matching_criteria TEXT NOT NULL,
+    confidence REAL NOT NULL,
+    version INTEGER NOT NULL,
+    is_active INTEGER NOT NULL,
+    suppression_window_sec REAL NOT NULL,
+    expected_response_level INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS security_incidents (
+    incident_id TEXT PRIMARY KEY,
+    title TEXT NOT NULL,
+    threat_classification TEXT NOT NULL,
+    severity TEXT NOT NULL,
+    confidence REAL NOT NULL,
+    detection_source TEXT NOT NULL,
+    affected_assets TEXT NOT NULL,
+    related_event_ids TEXT NOT NULL,
+    evidence_ids TEXT NOT NULL,
+    status TEXT NOT NULL,
+    assigned_owner TEXT,
+    created_at REAL NOT NULL,
+    updated_at REAL NOT NULL,
+    containment_action_ids TEXT NOT NULL,
+    resolution_summary TEXT,
+    audit_history TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_inc_status ON security_incidents(status);
+CREATE INDEX IF NOT EXISTS idx_inc_sev ON security_incidents(severity);
+
+CREATE TABLE IF NOT EXISTS security_containment_actions (
+    action_id TEXT PRIMARY KEY,
+    incident_id TEXT NOT NULL,
+    action_type TEXT NOT NULL,
+    target_resource TEXT NOT NULL,
+    scope TEXT NOT NULL,
+    reason TEXT NOT NULL,
+    response_level INTEGER NOT NULL,
+    status TEXT NOT NULL,
+    is_reversible INTEGER NOT NULL,
+    approval_request_id TEXT,
+    approval_token TEXT,
+    requested_at REAL NOT NULL,
+    executed_at REAL,
+    verified_at REAL,
+    verification_evidence TEXT,
+    error_message TEXT
+);
+
+CREATE TABLE IF NOT EXISTS forensic_evidence_records (
+    evidence_id TEXT PRIMARY KEY,
+    incident_id TEXT NOT NULL,
+    artifact_type TEXT NOT NULL,
+    source_identifier TEXT NOT NULL,
+    collector_identity TEXT NOT NULL,
+    integrity_digest TEXT NOT NULL,
+    raw_payload_redacted TEXT NOT NULL,
+    collected_at REAL NOT NULL,
+    data_classification TEXT NOT NULL,
+    chain_of_custody TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS security_posture_assessments (
+    assessment_id TEXT PRIMARY KEY,
+    overall_state TEXT NOT NULL,
+    score REAL NOT NULL,
+    active_incidents_count INTEGER NOT NULL,
+    critical_alerts_count INTEGER NOT NULL,
+    monitored_sources_count INTEGER NOT NULL,
+    missing_sources TEXT NOT NULL,
+    component_posture TEXT NOT NULL,
+    recommended_remediations TEXT NOT NULL,
+    timestamp REAL NOT NULL
+);
+"""
+
 
 def backup_database(db_path: str, backup_dir: str = "persistence_backups") -> str:
     """Creates a timestamped snapshot of the SQLite database prior to any schema modification."""
@@ -1751,6 +1878,18 @@ def apply_migrations(db_path: str) -> int:
             logger.info("Migration v16 applied successfully.")
             current_version = 16
 
+
+
+        if current_version < 17:
+            logger.info("Applying Migration v17 (Autonomous Cybersecurity, Threat Intelligence & Runtime Defense Tables)...")
+            cursor.executescript(MIGRATION_V17)
+            cursor.execute(
+                "INSERT INTO schema_migrations (version, applied_at, description) VALUES (?, ?, ?)",
+                (17, time.time(), "Autonomous Cybersecurity, Threat Intelligence and Runtime Defense Engine tables")
+            )
+            conn.commit()
+            logger.info("Migration v17 applied successfully.")
+            current_version = 17
 
         return current_version
     except Exception as e:
