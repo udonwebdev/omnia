@@ -7,7 +7,7 @@ from typing import List, Tuple
 
 logger = logging.getLogger("Omnia.Persistence.Migrations")
 
-CURRENT_SCHEMA_VERSION = 14
+CURRENT_SCHEMA_VERSION = 15
 
 MIGRATION_V1 = """
 -- Schema Version 1: Durable Task Graph & Crash Recovery Tables
@@ -1236,6 +1236,164 @@ CREATE TABLE IF NOT EXISTS forecast_drift_assessments (
 CREATE INDEX IF NOT EXISTS idx_fda_model ON forecast_drift_assessments(model_name);
 """
 
+
+MIGRATION_V15 = """
+-- Schema Version 15: Adaptive Learning & Model Lifecycle Governance Engine
+
+CREATE TABLE IF NOT EXISTS learning_signals (
+    signal_id TEXT PRIMARY KEY,
+    signal_type TEXT NOT NULL,
+    schema_version TEXT NOT NULL DEFAULT '1.0.0',
+    source_module TEXT NOT NULL,
+    source_record_id TEXT NOT NULL,
+    mission_id TEXT,
+    task_id TEXT,
+    experiment_id TEXT,
+    correlation_id TEXT,
+    event_time REAL NOT NULL,
+    observation_time REAL NOT NULL,
+    model_version TEXT,
+    strategy_id TEXT,
+    outcome_status TEXT NOT NULL,
+    metrics_json TEXT NOT NULL DEFAULT '{}',
+    is_verified INTEGER NOT NULL DEFAULT 0,
+    verification_method TEXT,
+    quality_status TEXT NOT NULL DEFAULT 'ACCEPTED',
+    exclusion_reason TEXT,
+    is_eligible_for_eval INTEGER NOT NULL DEFAULT 1,
+    is_eligible_for_training INTEGER NOT NULL DEFAULT 1,
+    provenance_hash TEXT NOT NULL,
+    created_at REAL NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_ls_source ON learning_signals(source_module, source_record_id);
+CREATE INDEX IF NOT EXISTS idx_ls_quality ON learning_signals(quality_status);
+CREATE INDEX IF NOT EXISTS idx_ls_strategy ON learning_signals(strategy_id, model_version);
+CREATE INDEX IF NOT EXISTS idx_ls_time ON learning_signals(event_time);
+
+CREATE TABLE IF NOT EXISTS learning_datasets (
+    dataset_id TEXT PRIMARY KEY,
+    version TEXT NOT NULL,
+    purpose TEXT NOT NULL,
+    schema_version TEXT NOT NULL DEFAULT '1.0.0',
+    time_window_start REAL NOT NULL,
+    time_window_end REAL NOT NULL,
+    sample_count INTEGER NOT NULL DEFAULT 0,
+    manifest_json TEXT NOT NULL DEFAULT '{}',
+    inclusion_rules_json TEXT NOT NULL DEFAULT '[]',
+    features_schema_json TEXT NOT NULL DEFAULT '{}',
+    content_digest TEXT NOT NULL,
+    created_at REAL NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_ld_purpose ON learning_datasets(purpose);
+CREATE INDEX IF NOT EXISTS idx_ld_version ON learning_datasets(dataset_id, version);
+
+CREATE TABLE IF NOT EXISTS learning_model_versions (
+    model_id TEXT NOT NULL,
+    version_id TEXT NOT NULL,
+    model_family TEXT NOT NULL,
+    artifact_ref TEXT NOT NULL,
+    artifact_digest TEXT NOT NULL,
+    feature_schema_version TEXT NOT NULL DEFAULT '1.0.0',
+    risk_level TEXT NOT NULL DEFAULT 'LOW',
+    status TEXT NOT NULL DEFAULT 'DRAFT',
+    evaluation_summary_json TEXT NOT NULL DEFAULT '{}',
+    limitations_json TEXT NOT NULL DEFAULT '[]',
+    created_by TEXT NOT NULL DEFAULT 'system',
+    created_at REAL NOT NULL,
+    updated_at REAL NOT NULL,
+    PRIMARY KEY (model_id, version_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_lmv_status ON learning_model_versions(status);
+CREATE INDEX IF NOT EXISTS idx_lmv_family ON learning_model_versions(model_family);
+
+CREATE TABLE IF NOT EXISTS learning_experiments (
+    experiment_id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    hypothesis TEXT NOT NULL,
+    experiment_type TEXT NOT NULL,
+    baseline_version TEXT NOT NULL,
+    candidate_version TEXT NOT NULL,
+    dataset_id TEXT NOT NULL,
+    protocol_json TEXT NOT NULL DEFAULT '{}',
+    primary_metric TEXT NOT NULL,
+    min_sample_size INTEGER NOT NULL DEFAULT 20,
+    success_threshold REAL NOT NULL DEFAULT 0.05,
+    max_regression_threshold REAL NOT NULL DEFAULT 0.02,
+    budget_json TEXT NOT NULL DEFAULT '{}',
+    status TEXT NOT NULL DEFAULT 'CREATED',
+    results_json TEXT NOT NULL DEFAULT '{}',
+    started_at REAL,
+    completed_at REAL,
+    created_at REAL NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_le_status ON learning_experiments(status);
+CREATE INDEX IF NOT EXISTS idx_le_candidate ON learning_experiments(candidate_version);
+
+CREATE TABLE IF NOT EXISTS learning_promotion_requests (
+    request_id TEXT PRIMARY KEY,
+    candidate_id TEXT NOT NULL,
+    candidate_version TEXT NOT NULL,
+    baseline_version TEXT NOT NULL,
+    experiment_id TEXT,
+    risk_level TEXT NOT NULL DEFAULT 'LOW',
+    status TEXT NOT NULL DEFAULT 'PENDING',
+    gates_evaluation_json TEXT NOT NULL DEFAULT '{}',
+    approval_request_id TEXT,
+    approved_by TEXT,
+    approved_at REAL,
+    rejection_reason TEXT,
+    target_rollout_stage TEXT NOT NULL DEFAULT 'CANARY',
+    current_rollout_stage TEXT NOT NULL DEFAULT 'OFFLINE',
+    rollback_target_version TEXT NOT NULL,
+    created_at REAL NOT NULL,
+    updated_at REAL NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_lpr_candidate ON learning_promotion_requests(candidate_id, candidate_version);
+CREATE INDEX IF NOT EXISTS idx_lpr_status ON learning_promotion_requests(status);
+
+CREATE TABLE IF NOT EXISTS learning_rollout_records (
+    rollout_id TEXT PRIMARY KEY,
+    request_id TEXT NOT NULL,
+    candidate_version TEXT NOT NULL,
+    baseline_version TEXT NOT NULL,
+    current_stage TEXT NOT NULL,
+    canary_traffic_pct REAL NOT NULL DEFAULT 0.0,
+    status TEXT NOT NULL DEFAULT 'IN_PROGRESS',
+    metrics_summary_json TEXT NOT NULL DEFAULT '{}',
+    halt_reason TEXT,
+    started_at REAL NOT NULL,
+    updated_at REAL NOT NULL,
+    completed_at REAL,
+    FOREIGN KEY (request_id) REFERENCES learning_promotion_requests(request_id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_lrr_request ON learning_rollout_records(request_id);
+CREATE INDEX IF NOT EXISTS idx_lrr_status ON learning_rollout_records(status);
+
+CREATE TABLE IF NOT EXISTS learning_drift_records (
+    record_id TEXT PRIMARY KEY,
+    model_id TEXT NOT NULL,
+    version_id TEXT NOT NULL,
+    drift_type TEXT NOT NULL,
+    feature_or_metric TEXT NOT NULL,
+    baseline_value REAL NOT NULL,
+    observed_value REAL NOT NULL,
+    drift_metric_value REAL NOT NULL,
+    threshold REAL NOT NULL,
+    severity TEXT NOT NULL DEFAULT 'LOW',
+    recommendation TEXT NOT NULL,
+    assessed_at REAL NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_ldr_model ON learning_drift_records(model_id, version_id);
+CREATE INDEX IF NOT EXISTS idx_ldr_severity ON learning_drift_records(severity);
+"""
+
 def backup_database(db_path: str, backup_dir: str = "persistence_backups") -> str:
     """Creates a timestamped snapshot of the SQLite database prior to any schema modification."""
     if not os.path.exists(db_path):
@@ -1423,6 +1581,17 @@ def apply_migrations(db_path: str) -> int:
             conn.commit()
             logger.info("Migration v14 applied successfully.")
             current_version = 14
+
+        if current_version < 15:
+            logger.info("Applying Migration v15 (Adaptive Learning & Model Lifecycle Governance Tables)...")
+            cursor.executescript(MIGRATION_V15)
+            cursor.execute(
+                "INSERT INTO schema_migrations (version, applied_at, description) VALUES (?, ?, ?)",
+                (15, time.time(), "Adaptive Learning and Model Lifecycle Governance Engine tables")
+            )
+            conn.commit()
+            logger.info("Migration v15 applied successfully.")
+            current_version = 15
 
         return current_version
     except Exception as e:

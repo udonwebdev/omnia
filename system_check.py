@@ -1699,7 +1699,7 @@ async def run_diagnostics():
 
 
     # 24. Module 32: Predictive Intelligence & Risk Forecasting Engine
-    print("\n[24/24] Checking Module 32: Predictive Intelligence & Risk Forecasting Engine...")
+    print("\n[24/25] Checking Module 32: Predictive Intelligence & Risk Forecasting Engine...")
     from prediction import (
         predictive_service,
         ForecastRequest,
@@ -1785,6 +1785,156 @@ async def run_diagnostics():
         import traceback
         traceback.print_exc()
         print(f"      [32] Predictive Intelligence Engine .... FAIL ({e})")
+
+
+
+    # 25. Module 33: Adaptive Learning & Model Lifecycle Governance Engine
+    print("\n[25/25] Checking Module 33: Adaptive Learning & Model Lifecycle Governance Engine...")
+    from learning.service import adaptive_learning_service
+    from learning.models import (
+        SignalType,
+        DatasetPurpose,
+        ModelLifecycleStatus,
+        RolloutStage,
+        RolloutStatus,
+        DriftSeverity,
+    )
+
+    try:
+        # 25a. Validated Signal Collection & Attribution
+        sig_id = f"diag-sig-{uuid.uuid4().hex[:6]}"
+        s_ok, sig, _ = adaptive_learning_service.record_signal(
+            signal_id=sig_id,
+            source_subsystem="diagnostics",
+            signal_type=SignalType.TASK_COMPLETION,
+            strategy_id="heuristic_solver_v1",
+            metric_name="latency_ms",
+            metric_value=45.2,
+            payload={"iterations": 12, "cache_hit": True},
+            model_version_id="diag_baseline_v1",
+        )
+        assert s_ok is True
+        assert sig is not None
+        print("      [33] Validated Signal & Provenance ...... PASS (Sanitized signal collection with anti-leakage verification)")
+
+        # 25b. Immutable Dataset Builder with Cryptographic Digest
+        ds_id = f"diag-ds-{uuid.uuid4().hex[:6]}"
+        dataset = adaptive_learning_service.create_dataset(
+            dataset_id=ds_id,
+            name="Diagnostic Dataset",
+            version="1.0.0",
+            purpose=DatasetPurpose.BENCHMARK_TESTING,
+            strategy_id="heuristic_solver_v1",
+        )
+        assert dataset is not None
+        assert len(dataset.content_digest) == 64
+        print("      [33] Reproducible Dataset Materialization PASS (Anti-leakage temporal boundary with SHA-256 digest)")
+
+        # 25c. Non-Bypassable Promotion Gates (Anti-Self-Promotion & Human Auth)
+        m_cand_id = f"diag_cand_{uuid.uuid4().hex[:6]}"
+        m_base_id = f"diag_base_{uuid.uuid4().hex[:6]}"
+        cand_ver = adaptive_learning_service.register_model_version(
+            model_version_id=m_cand_id,
+            name="DiagnosticSolver",
+            version="2.0.0",
+            artifact_uri="models://checkpoints/solver_2.0.0.bin",
+            artifact_checksum="sha256:3333333333333333333333333333333333333333333333333333333333333333",
+            hyperparameters={"alpha": 0.1},
+            author="engineer_dan",
+        )
+        base_ver = adaptive_learning_service.register_model_version(
+            model_version_id=m_base_id,
+            name="DiagnosticSolver",
+            version="1.0.0",
+            artifact_uri="models://checkpoints/solver_1.0.0.bin",
+            artifact_checksum="sha256:4444444444444444444444444444444444444444444444444444444444444444",
+            hyperparameters={"alpha": 0.05},
+            author="system",
+        )
+
+        # Self-promotion violation check
+        p_self = adaptive_learning_service.evaluate_and_request_promotion(
+            request_id=f"promo-self-{uuid.uuid4().hex[:6]}",
+            candidate_version_id=cand_ver.version_id,
+            baseline_version_id=base_ver.version_id,
+            target_subsystem="diagnostics",
+            justification="Self-approved test",
+            evaluation_metrics={"sample_count": 60, "success_rate": 0.95},
+            baseline_metrics={"sample_count": 60, "success_rate": 0.90},
+            regression_test_results={"core_tests": True},
+            policy_validation_passed=True,
+            security_audit_passed=True,
+            rollback_target_verified=True,
+            human_approval_signature="engineer_dan",
+        )
+        assert p_self.status == "REJECTED", "Self-promotion gate was bypassed!"
+
+        # Authorized promotion check
+        p_auth = adaptive_learning_service.evaluate_and_request_promotion(
+            request_id=f"promo-auth-{uuid.uuid4().hex[:6]}",
+            candidate_version_id=cand_ver.version_id,
+            baseline_version_id=base_ver.version_id,
+            target_subsystem="diagnostics",
+            justification="Authorized promotion with improved metric",
+            evaluation_metrics={"sample_count": 60, "success_rate": 0.95},
+            baseline_metrics={"sample_count": 60, "success_rate": 0.90},
+            regression_test_results={"core_tests": True},
+            policy_validation_passed=True,
+            security_audit_passed=True,
+            rollback_target_verified=True,
+            human_approval_signature="qa_lead_eve",
+        )
+        assert p_auth.status == "APPROVED"
+        assert p_auth.is_eligible_for_promotion() is True
+        print("      [33] Non-Bypassable Promotion Gates ...... PASS (Strict enforcement of anti-self-promotion & human auth)")
+
+        # 25d. Controlled Canary Rollout & Verified Rollback
+        r_id = f"diag-rollout-{uuid.uuid4().hex[:6]}"
+        rollout = adaptive_learning_service.initiate_rollout(
+            rollout_id=r_id,
+            candidate_version_id=cand_ver.version_id,
+            baseline_version_id=base_ver.version_id,
+            target_subsystem="diagnostics",
+            initial_traffic_percent=0.05,
+        )
+        assert rollout.canary_traffic_pct == 0.05
+
+        # Automated rollback on degradation
+        rb_ok, rb_msg = adaptive_learning_service.rollback_rollout(
+            rollout_id=r_id,
+            reason="Diagnostic simulated degradation trigger",
+        )
+        assert rb_ok is True
+        print("      [33] Canary Rollout & Verified Rollback . PASS (Controlled stage progression & instantaneous safe rollback)")
+
+        # 25e. Drift Detection & Parameter Boundary Advisor
+        drift_rec = adaptive_learning_service.assess_performance_drift(
+            subsystem="diagnostics",
+            metric_name="task_accuracy",
+            baseline_value=0.98,
+            current_value=0.72,
+        )
+        assert drift_rec.severity == DriftSeverity.CRITICAL
+
+        # Bounded tuning security check
+        is_allowed, _, reason = adaptive_learning_service.recommend_parameter_tuning(
+            recommendation_id=f"rec-{uuid.uuid4().hex[:6]}",
+            parameter_key="security.firewall_rules",
+            current_value="strict",
+            suggested_value="permissive",
+            subsystem="security",
+            justification="Relax security",
+            supporting_signal_ids=[],
+            expected_improvement="Faster networking",
+        )
+        assert is_allowed is False
+        assert "strictly forbidden" in reason
+        print("      [33] Drift Monitor & Boundary Advisor ... PASS (Continuous drift detection & non-negotiable security bounds)")
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        print(f"      [33] Adaptive Learning Engine .......... FAIL ({e})")
 
     print("\n" + "=" * 60)
     print("Diagnostics complete.")

@@ -2504,6 +2504,227 @@ def check_model_drift(
     except Exception as e:
         return json.dumps({"success": False, "error": str(e)}, indent=2)
 
+# --- Module 33: Adaptive Learning & Model Lifecycle Governance Tools ---
+@tool
+def record_learning_signal(
+    signal_id: str,
+    source_subsystem: str,
+    signal_type: str,
+    strategy_id: str,
+    metric_name: str,
+    metric_value: float,
+    payload: Dict[str, Any],
+    model_version_id: str = None,
+    task_id: str = None,
+    execution_id: str = None,
+) -> str:
+    """Records an empirical learning signal from task completions, forecasts, or user feedback."""
+    from learning.service import adaptive_learning_service
+    from learning.models import SignalType
+    try:
+        sig_type = SignalType(signal_type)
+        val = float(metric_value)
+        success, signal, msg = adaptive_learning_service.record_signal(
+            signal_id=signal_id,
+            source_subsystem=source_subsystem,
+            signal_type=sig_type,
+            strategy_id=strategy_id,
+            metric_name=metric_name,
+            metric_value=val,
+            payload=payload,
+            model_version_id=model_version_id or None,
+            task_id=task_id or None,
+            execution_id=execution_id or None,
+        )
+        return json.dumps({
+            "success": success,
+            "message": msg,
+            "signal": signal.to_dict() if signal else None,
+        }, indent=2)
+    except Exception as e:
+        return json.dumps({"success": False, "error": str(e)}, indent=2)
+
+@tool
+def build_learning_dataset(
+    dataset_id: str,
+    name: str,
+    version: str,
+    purpose: str,
+    strategy_id: str = None,
+    train_val_split_ratio: float = 0.8,
+) -> str:
+    """Builds a deterministic, reproducible dataset with anti-leakage temporal split from verified signals."""
+    from learning.service import adaptive_learning_service
+    from learning.models import DatasetPurpose
+    try:
+        purp = DatasetPurpose(purpose)
+        ds = adaptive_learning_service.create_dataset(
+            dataset_id=dataset_id,
+            name=name,
+            version=version,
+            purpose=purp,
+            strategy_id=strategy_id or None,
+            train_val_split_ratio=float(train_val_split_ratio),
+        )
+        return json.dumps({
+            "success": True,
+            "dataset": ds.to_dict(),
+        }, indent=2)
+    except Exception as e:
+        return json.dumps({"success": False, "error": str(e)}, indent=2)
+
+@tool
+def create_learning_experiment(
+    experiment_id: str,
+    name: str,
+    experiment_type: str,
+    baseline_version_id: str,
+    candidate_version_id: str,
+    primary_metric: str,
+    traffic_allocation: float = 0.1,
+    min_sample_size: int = 50,
+) -> str:
+    """Launches an offline benchmark, shadow, A/B test, or replay experiment between model/strategy versions."""
+    from learning.service import adaptive_learning_service
+    from learning.models import ExperimentType
+    try:
+        exp_type = ExperimentType(experiment_type)
+        exp = adaptive_learning_service.create_experiment(
+            experiment_id=experiment_id,
+            name=name,
+            experiment_type=exp_type,
+            baseline_version_id=baseline_version_id,
+            candidate_version_id=candidate_version_id,
+            primary_metric=primary_metric,
+            traffic_allocation=float(traffic_allocation),
+            min_sample_size=int(min_sample_size),
+        )
+        return json.dumps({
+            "success": True,
+            "experiment": exp.to_dict(),
+        }, indent=2)
+    except Exception as e:
+        return json.dumps({"success": False, "error": str(e)}, indent=2)
+
+@tool
+def evaluate_candidate_promotion(
+    request_id: str,
+    candidate_version_id: str,
+    baseline_version_id: str,
+    target_subsystem: str,
+    justification: str,
+    evaluation_metrics: Dict[str, float],
+    baseline_metrics: Dict[str, float],
+    regression_test_results: Dict[str, bool],
+    policy_validation_passed: bool = True,
+    security_audit_passed: bool = True,
+    rollback_target_verified: bool = True,
+    human_approval_signature: str = None,
+) -> str:
+    """Evaluates candidate model/strategy against non-bypassable promotion gates."""
+    from learning.service import adaptive_learning_service
+    try:
+        req = adaptive_learning_service.evaluate_and_request_promotion(
+            request_id=request_id,
+            candidate_version_id=candidate_version_id,
+            baseline_version_id=baseline_version_id,
+            target_subsystem=target_subsystem,
+            justification=justification,
+            evaluation_metrics=evaluation_metrics,
+            baseline_metrics=baseline_metrics,
+            regression_test_results=regression_test_results,
+            policy_validation_passed=bool(policy_validation_passed),
+            security_audit_passed=bool(security_audit_passed),
+            rollback_target_verified=bool(rollback_target_verified),
+            human_approval_signature=human_approval_signature or None,
+        )
+        return json.dumps({
+            "success": req.is_approved,
+            "gates_passed": req.gates_passed,
+            "promotion_request": req.to_dict(),
+        }, indent=2)
+    except Exception as e:
+        return json.dumps({"success": False, "error": str(e)}, indent=2)
+
+@tool
+def execute_controlled_rollout(
+    rollout_id: str,
+    candidate_version_id: str,
+    baseline_version_id: str,
+    target_subsystem: str,
+    initial_traffic_percent: float = 0.05,
+) -> str:
+    """Initiates a controlled staged canary deployment for an approved model or strategy version."""
+    from learning.service import adaptive_learning_service
+    try:
+        rec = adaptive_learning_service.initiate_rollout(
+            rollout_id=rollout_id,
+            candidate_version_id=candidate_version_id,
+            baseline_version_id=baseline_version_id,
+            target_subsystem=target_subsystem,
+            initial_traffic_percent=float(initial_traffic_percent),
+        )
+        return json.dumps({
+            "success": True,
+            "rollout": rec.to_dict(),
+        }, indent=2)
+    except Exception as e:
+        return json.dumps({"success": False, "error": str(e)}, indent=2)
+
+@tool
+def execute_controlled_rollback(
+    rollout_id: str,
+    reason: str,
+) -> str:
+    """Immediately rolls back active traffic from a degraded candidate back to the stable baseline."""
+    from learning.service import adaptive_learning_service
+    try:
+        success, msg = adaptive_learning_service.rollback_rollout(
+            rollout_id=rollout_id,
+            reason=reason,
+        )
+        return json.dumps({
+            "success": success,
+            "message": msg,
+        }, indent=2)
+    except Exception as e:
+        return json.dumps({"success": False, "error": str(e)}, indent=2)
+
+@tool
+def assess_learning_drift(
+    subsystem: str,
+    metric_or_feature: str,
+    drift_type: str,
+    baseline_value_or_distribution: Any,
+    current_value_or_distribution: Any,
+    sample_size: int = 100,
+) -> str:
+    """Assesses feature drift or performance degradation across learning subsystems."""
+    from learning.service import adaptive_learning_service
+    try:
+        if str(drift_type).lower() in ("feature", "feature_drift", "input"):
+            rec = adaptive_learning_service.assess_feature_drift(
+                subsystem=subsystem,
+                feature_name=metric_or_feature,
+                baseline_distribution=[float(x) for x in baseline_value_or_distribution],
+                current_distribution=[float(x) for x in current_value_or_distribution],
+            )
+        else:
+            rec = adaptive_learning_service.assess_performance_drift(
+                subsystem=subsystem,
+                metric_name=metric_or_feature,
+                baseline_value=float(baseline_value_or_distribution),
+                current_value=float(current_value_or_distribution),
+                sample_size=int(sample_size),
+            )
+        return json.dumps({
+            "success": True,
+            "drift_record": rec.to_dict(),
+        }, indent=2)
+    except Exception as e:
+        return json.dumps({"success": False, "error": str(e)}, indent=2)
+
+
 
 OMNIA_ALL_TOOLS = [
     unlock_all_devices,
@@ -2655,6 +2876,13 @@ OMNIA_ALL_TOOLS = [
     record_forecast_outcome,
     evaluate_forecast_accuracy,
     check_model_drift,
+    record_learning_signal,
+    build_learning_dataset,
+    create_learning_experiment,
+    evaluate_candidate_promotion,
+    execute_controlled_rollout,
+    execute_controlled_rollback,
+    assess_learning_drift,
 ]
 
 # Backward compatibility alias
