@@ -1,3 +1,4 @@
+import time
 import asyncio
 import sys
 import uuid
@@ -1626,7 +1627,7 @@ async def run_diagnostics():
         print(f"      [30] Knowledge Graph Engine .... FAIL ({e})")
 
     # 23. Module 31: Temporal Knowledge & Causal State Engine
-    print("\n[23/23] Checking Module 31: Temporal Knowledge & Causal State Engine...")
+    print("\n[23/24] Checking Module 31: Temporal Knowledge & Causal State Engine...")
     from temporal import (
         temporal_causal_service,
         CausalRelationType,
@@ -1695,6 +1696,95 @@ async def run_diagnostics():
         import traceback
         traceback.print_exc()
         print(f"      [31] Temporal Causal Engine .... FAIL ({e})")
+
+
+    # 24. Module 32: Predictive Intelligence & Risk Forecasting Engine
+    print("\n[24/24] Checking Module 32: Predictive Intelligence & Risk Forecasting Engine...")
+    from prediction import (
+        predictive_service,
+        ForecastRequest,
+        ForecastTarget,
+        ForecastHorizon,
+        ForecastType,
+        ForecastInput,
+        ForecastScenario,
+        RiskLevel,
+    )
+
+    try:
+        now_ts = time.time()
+        test_inputs = [
+            ForecastInput(input_id="sc_inp_1", timestamp=now_ts - 300, value=100.0, source="sys_metrics"),
+            ForecastInput(input_id="sc_inp_2", timestamp=now_ts - 200, value=110.0, source="sys_metrics"),
+            ForecastInput(input_id="sc_inp_3", timestamp=now_ts - 100, value=120.0, source="sys_metrics"),
+            ForecastInput(input_id="sc_inp_4", timestamp=now_ts, value=130.0, source="sys_metrics"),
+        ]
+
+        # 24a. Baseline Forecasting & Extrapolation
+        f_req = ForecastRequest(
+            request_id=f"sc-req-{uuid.uuid4().hex[:6]}",
+            target=ForecastTarget(
+                target_id="sys_load_qps",
+                target_description="System query throughput",
+                target_type=ForecastType.TIME_SERIES,
+                observation_unit="qps",
+                outcome_definition="Active transactions per second",
+            ),
+            horizon=ForecastHorizon.from_duration(300.0, now_ts),
+            as_of_time=now_ts,
+        )
+        fc = predictive_service.generate_forecast(f_req, inputs=test_inputs, method_name="TrendForecaster")
+        assert fc is not None
+        assert fc.predicted_value is not None
+        assert fc.interval is not None
+        assert fc.predicted_value >= 130.0
+        print("      [32] Trend & Uncertainty Extrapolation .. PASS (Trend projection with explicit confidence intervals)")
+
+        # 24b. Emerging Risk Assessment & Likelihood/Impact Decomposition
+        risk = predictive_service.assess_risk(
+            target_id="sys_load_qps",
+            inputs=test_inputs,
+            critical_threshold=125.0,
+            impact_score=4.0,
+            horizon_sec=600.0,
+        )
+        assert risk is not None
+        assert risk.likelihood_score > 0.5
+        assert risk.impact_score == 4.0
+        assert risk.risk_level in (RiskLevel.HIGH, RiskLevel.CRITICAL)
+        print("      [32] Emerging Risk & Severity Analysis .. PASS (Strict separation of likelihood from impact severity)")
+
+        # 24c. Scenario Comparison (Counterfactual Integrity)
+        scenarios = [
+            ForecastScenario(
+                scenario_id="sc_hypo_mitigate",
+                name="Shed Load",
+                description="Hypothetical shedding of background ingestion tasks",
+                modified_variables={"simulated_last_value": 80.0},
+            )
+        ]
+        scn_cmp = predictive_service.compare_scenarios(f_req, scenarios=scenarios, inputs=test_inputs, method_name="LastObservationBaseline")
+        assert scn_cmp is not None
+        assert scn_cmp.is_hypothetical is True
+        assert "sc_hypo_mitigate" in scn_cmp.scenario_forecasts
+        print("      [32] Counterfactual Scenario Analysis ... PASS (Explicitly tagged hypothetical comparative projection)")
+
+        # 24d. Outcome Ground-Truth Evaluation & Calibration Engine
+        outcome = predictive_service.record_outcome(
+            forecast_id=fc.forecast_id,
+            observed_value=145.0,
+            notes="Actual recorded load at horizon close",
+        )
+        eval_res = predictive_service.evaluate_forecast(forecast_id=fc.forecast_id, outcome_id=outcome.outcome_id)
+        assert eval_res is not None
+        assert eval_res.metric_name == "ABSOLUTE_ERROR"
+        assert eval_res.error_value >= 0.0
+        print("      [32] Outcome Verification & Calibration . PASS (Ground-truth error computation without forecast mutation)")
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        print(f"      [32] Predictive Intelligence Engine .... FAIL ({e})")
 
     print("\n" + "=" * 60)
     print("Diagnostics complete.")

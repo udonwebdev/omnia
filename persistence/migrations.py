@@ -7,7 +7,7 @@ from typing import List, Tuple
 
 logger = logging.getLogger("Omnia.Persistence.Migrations")
 
-CURRENT_SCHEMA_VERSION = 13
+CURRENT_SCHEMA_VERSION = 14
 
 MIGRATION_V1 = """
 -- Schema Version 1: Durable Task Graph & Crash Recovery Tables
@@ -1116,6 +1116,126 @@ CREATE INDEX IF NOT EXISTS idx_ceb_link ON causal_evidence_bindings(causal_link_
 CREATE INDEX IF NOT EXISTS idx_ceb_ev ON causal_evidence_bindings(evidence_id);
 """
 
+MIGRATION_V14 = """
+-- Schema Version 14: Predictive Intelligence & Risk Forecasting Engine
+
+CREATE TABLE IF NOT EXISTS forecast_requests (
+    request_id TEXT PRIMARY KEY,
+    target_id TEXT NOT NULL,
+    target_description TEXT NOT NULL,
+    target_type TEXT NOT NULL,
+    horizon_start REAL NOT NULL,
+    horizon_end REAL NOT NULL,
+    horizon_duration_sec REAL NOT NULL,
+    parameters_json TEXT NOT NULL DEFAULT '{}',
+    status TEXT NOT NULL DEFAULT 'REQUESTED',
+    created_at REAL NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_frq_target ON forecast_requests(target_id);
+CREATE INDEX IF NOT EXISTS idx_frq_status ON forecast_requests(status);
+
+CREATE TABLE IF NOT EXISTS forecast_records (
+    forecast_id TEXT PRIMARY KEY,
+    request_id TEXT NOT NULL,
+    target_id TEXT NOT NULL,
+    forecast_type TEXT NOT NULL,
+    predicted_value REAL,
+    predicted_class TEXT,
+    probability REAL,
+    is_calibrated_probability INTEGER NOT NULL DEFAULT 0,
+    interval_lower REAL,
+    interval_upper REAL,
+    interval_confidence REAL,
+    is_calibrated_interval INTEGER NOT NULL DEFAULT 0,
+    coverage_guarantee TEXT,
+    method_name TEXT NOT NULL,
+    model_version TEXT NOT NULL DEFAULT '1.0.0',
+    inputs_hash TEXT NOT NULL,
+    sample_count INTEGER NOT NULL DEFAULT 0,
+    assumptions_json TEXT NOT NULL DEFAULT '[]',
+    limitations_json TEXT NOT NULL DEFAULT '[]',
+    explanation_json TEXT NOT NULL DEFAULT '{}',
+    risk_assessment_json TEXT NOT NULL DEFAULT '{}',
+    status TEXT NOT NULL DEFAULT 'COMPLETED',
+    superseded_by TEXT,
+    created_at REAL NOT NULL,
+    expires_at REAL NOT NULL,
+    FOREIGN KEY (request_id) REFERENCES forecast_requests(request_id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_frc_target ON forecast_records(target_id);
+CREATE INDEX IF NOT EXISTS idx_frc_status ON forecast_records(status);
+CREATE INDEX IF NOT EXISTS idx_frc_expires ON forecast_records(expires_at);
+
+CREATE TABLE IF NOT EXISTS forecast_outcomes (
+    outcome_id TEXT PRIMARY KEY,
+    forecast_id TEXT NOT NULL,
+    target_id TEXT NOT NULL,
+    observed_value REAL,
+    observed_class TEXT,
+    observed_at REAL NOT NULL,
+    source TEXT NOT NULL DEFAULT 'system',
+    is_verified INTEGER NOT NULL DEFAULT 1,
+    notes TEXT,
+    created_at REAL NOT NULL,
+    FOREIGN KEY (forecast_id) REFERENCES forecast_records(forecast_id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_foc_forecast ON forecast_outcomes(forecast_id);
+CREATE INDEX IF NOT EXISTS idx_foc_target ON forecast_outcomes(target_id);
+
+CREATE TABLE IF NOT EXISTS forecast_evaluations (
+    evaluation_id TEXT PRIMARY KEY,
+    forecast_id TEXT NOT NULL,
+    outcome_id TEXT NOT NULL,
+    metric_name TEXT NOT NULL,
+    error_value REAL NOT NULL,
+    is_accurate INTEGER NOT NULL DEFAULT 0,
+    evaluation_notes TEXT,
+    evaluated_at REAL NOT NULL,
+    FOREIGN KEY (forecast_id) REFERENCES forecast_records(forecast_id) ON DELETE CASCADE,
+    FOREIGN KEY (outcome_id) REFERENCES forecast_outcomes(outcome_id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_fev_forecast ON forecast_evaluations(forecast_id);
+CREATE INDEX IF NOT EXISTS idx_fev_metric ON forecast_evaluations(metric_name);
+
+CREATE TABLE IF NOT EXISTS forecast_calibration_records (
+    calibration_id TEXT PRIMARY KEY,
+    model_name TEXT NOT NULL,
+    target_type TEXT NOT NULL,
+    sample_count INTEGER NOT NULL,
+    brier_score REAL,
+    ece REAL,
+    mae REAL,
+    rmse REAL,
+    coverage_rate REAL,
+    time_window_start REAL NOT NULL,
+    time_window_end REAL NOT NULL,
+    is_valid INTEGER NOT NULL DEFAULT 1,
+    notes TEXT,
+    updated_at REAL NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_fcr_model ON forecast_calibration_records(model_name, target_type);
+
+CREATE TABLE IF NOT EXISTS forecast_drift_assessments (
+    drift_id TEXT PRIMARY KEY,
+    model_name TEXT NOT NULL,
+    target_id TEXT NOT NULL,
+    detected INTEGER NOT NULL DEFAULT 0,
+    drift_type TEXT NOT NULL,
+    p_value REAL,
+    metric_shift REAL NOT NULL DEFAULT 0.0,
+    sample_count INTEGER NOT NULL DEFAULT 0,
+    recommendation TEXT NOT NULL,
+    detected_at REAL NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_fda_model ON forecast_drift_assessments(model_name);
+"""
+
 def backup_database(db_path: str, backup_dir: str = "persistence_backups") -> str:
     """Creates a timestamped snapshot of the SQLite database prior to any schema modification."""
     if not os.path.exists(db_path):
@@ -1292,6 +1412,17 @@ def apply_migrations(db_path: str) -> int:
             conn.commit()
             logger.info("Migration v13 applied successfully.")
             current_version = 13
+
+        if current_version < 14:
+            logger.info("Applying Migration v14 (Predictive Intelligence & Risk Forecasting Tables)...")
+            cursor.executescript(MIGRATION_V14)
+            cursor.execute(
+                "INSERT INTO schema_migrations (version, applied_at, description) VALUES (?, ?, ?)",
+                (14, time.time(), "Predictive Intelligence and Risk Forecasting Engine tables")
+            )
+            conn.commit()
+            logger.info("Migration v14 applied successfully.")
+            current_version = 14
 
         return current_version
     except Exception as e:

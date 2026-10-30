@@ -1,4 +1,6 @@
 import httpx
+import uuid
+import time
 from typing import Optional, Dict, Any, List
 try:
     from google.antigravity.tools import tool
@@ -1555,6 +1557,198 @@ def query_property_keyframes(property_id: str) -> str:
 
 
 
+# --- Video Studio Module 9: Audio Engine & Mixer Tools ---
+@tool
+def render_timeline_audio_slice(sequence_id: str, start_frame: int, duration_frames: int, sample_rate: int = 48000) -> str:
+    """Renders and mixes an audio slice across tracks and buses with meters."""
+    from video_studio.timeline_service import timeline_service
+    from video_studio.audio_service import audio_engine_service
+    seq = timeline_service.get_sequence(sequence_id)
+    if not seq:
+        return json.dumps({"success": False, "error": f"Sequence '{sequence_id}' not found."})
+    try:
+        buf = audio_engine_service.render_timeline_audio(seq, start_frame=start_frame, duration_frames=duration_frames, sample_rate=sample_rate)
+        from video_studio.audio_models import AudioMeterSnapshot
+        meters = AudioMeterSnapshot.calculate(buf)
+        return json.dumps({
+            "success": True,
+            "samples_count": buf.samples,
+            "channels": buf.channels,
+            "sample_rate": buf.sample_rate,
+            "meters": meters.to_dict(),
+        }, indent=2)
+    except Exception as e:
+        return json.dumps({"success": False, "error": str(e)}, indent=2)
+
+@tool
+def configure_audio_bus(sequence_id: str, bus_id: str, name: str, gain_db: float = 0.0, pan: float = 0.0, target_bus_id: str = "") -> str:
+    """Creates or updates an audio submix bus with routing and level controls."""
+    from video_studio.timeline_service import timeline_service
+    from video_studio.audio_mixer import multitrack_audio_mixer
+    from video_studio.audio_models import AudioBus, AudioBusType
+    seq = timeline_service.get_sequence(sequence_id)
+    if not seq:
+        return json.dumps({"success": False, "error": f"Sequence '{sequence_id}' not found."})
+    try:
+        graph = multitrack_audio_mixer.get_or_create_routing(seq)
+        bus = AudioBus(
+            bus_id=bus_id,
+            name=name,
+            bus_type=AudioBusType.SUBMIX,
+            gain_db=gain_db,
+            pan=pan,
+            target_bus_id=target_bus_id if target_bus_id else None,
+        )
+        graph.add_bus(bus)
+        if target_bus_id:
+            graph.route_bus(bus_id, target_bus_id)
+        return json.dumps({"success": True, "bus": bus.to_dict()}, indent=2)
+    except Exception as e:
+        return json.dumps({"success": False, "error": str(e)}, indent=2)
+
+@tool
+def get_audio_meters(sequence_id: str) -> str:
+    """Returns the most recent peak and RMS audio meter readings for the sequence."""
+    from video_studio.audio_service import audio_engine_service
+    meters = audio_engine_service.get_meters(sequence_id)
+    return json.dumps({"success": True, "meters": meters}, indent=2)
+
+@tool
+def list_audio_devices() -> str:
+    """Discovers available audio output devices with capability reporting."""
+    from video_studio.audio_service import audio_engine_service
+    devices = audio_engine_service.list_devices()
+    return json.dumps({
+        "success": True,
+        "devices": [
+            {
+                "device_id": d.device_id,
+                "name": d.name,
+                "is_default": d.is_default,
+                "max_channels": d.max_channels,
+                "supported_sample_rates": d.supported_sample_rates,
+                "is_available": d.is_available,
+            }
+            for d in devices
+        ]
+    }, indent=2)
+
+# --- Video Studio Module 10 & 11: Effects & Compositing Tools ---
+@tool
+def add_video_effect(clip_id: str, effect_id: str, parameters_json: str = "{}") -> str:
+    """Adds a video effect to a timeline clip (e.g., 'effect.transform', 'effect.color_correction', 'effect.opacity')."""
+    from video_studio.effects_service import effects_service
+    try:
+        params = json.loads(parameters_json) if parameters_json else {}
+        inst = effects_service.add_effect_to_clip(clip_id, effect_id, parameters=params)
+        return json.dumps({"success": True, "effect": inst.to_dict()}, indent=2)
+    except Exception as e:
+        return json.dumps({"success": False, "error": str(e)}, indent=2)
+
+@tool
+def configure_clip_compositing(clip_id: str, opacity: float = 1.0, blend_mode: str = "NORMAL") -> str:
+    """Configures layer opacity and blend mode ('NORMAL', 'MULTIPLY', 'SCREEN', 'ADD', 'DIFFERENCE', 'OVERLAY')."""
+    from video_studio.compositor import multilayer_compositor
+    from video_studio.compositing_models import BlendMode
+    try:
+        b_enum = BlendMode(blend_mode.upper())
+        multilayer_compositor.set_clip_opacity(clip_id, opacity)
+        multilayer_compositor.set_clip_blend_mode(clip_id, b_enum)
+        return json.dumps({"success": True, "clip_id": clip_id, "opacity": opacity, "blend_mode": b_enum.value}, indent=2)
+    except Exception as e:
+        return json.dumps({"success": False, "error": str(e)}, indent=2)
+
+@tool
+def list_available_video_effects() -> str:
+    """Lists all registered video effect processors and their parameter schemas."""
+    from video_studio.effects_processors import effect_processor_registry
+    effects = effect_processor_registry.list_effects()
+    return json.dumps({"success": True, "effects": effects}, indent=2)
+
+# --- Video Studio Module 12: Transition Tools ---
+@tool
+def add_video_transition(
+    sequence_id: str,
+    track_id: str,
+    transition_type: str,
+    cut_frame: int,
+    duration_frames: int = 24,
+    alignment: str = "CENTER_ON_CUT",
+    direction: str = "LEFT_TO_RIGHT",
+    parameters_json: str = "{}",
+    crossfade_curve: str = "EQUAL_POWER"
+) -> str:
+    """Adds a non-destructive transition (DISSOLVE, FADE_TO_BLACK, FADE_FROM_BLACK, WIPE, PUSH, SLIDE, AUDIO_CROSSFADE)."""
+    from video_studio.timeline_service import timeline_service
+    from video_studio.transitions_service import transitions_service
+    from video_studio.transitions_models import TransitionType, TransitionAlignment, TransitionDirection, CrossfadeCurve
+    import json
+    try:
+        seq = timeline_service.get_sequence(sequence_id)
+        if not seq:
+            return json.dumps({"success": False, "error": f"Sequence '{sequence_id}' not found."})
+
+        ttype = TransitionType(transition_type.upper())
+        align = TransitionAlignment(alignment.upper())
+        dir_enum = TransitionDirection(direction.upper())
+        curve = CrossfadeCurve(crossfade_curve.upper())
+        params = json.loads(parameters_json) if parameters_json else {}
+
+        tr = transitions_service.add_transition(
+            sequence=seq,
+            track_id=track_id,
+            transition_type=ttype,
+            cut_frame=cut_frame,
+            duration_frames=duration_frames,
+            alignment=align,
+            direction=dir_enum,
+            parameters=params,
+            crossfade_curve=curve,
+        )
+        return json.dumps({"success": True, "transition": tr.to_dict()}, indent=2)
+    except Exception as e:
+        return json.dumps({"success": False, "error": str(e)}, indent=2)
+
+@tool
+def validate_transition_handles(
+    sequence_id: str,
+    track_id: str,
+    outgoing_clip_id: str,
+    incoming_clip_id: str,
+    duration_frames: int = 24,
+    alignment: str = "CENTER_ON_CUT"
+) -> str:
+    """Validates whether clips have sufficient head and tail source handles for a transition."""
+    from video_studio.timeline_service import timeline_service
+    from video_studio.transitions_service import transitions_service
+    from video_studio.transitions_models import TransitionAlignment
+    import json
+    try:
+        seq = timeline_service.get_sequence(sequence_id)
+        if not seq:
+            return json.dumps({"success": False, "error": f"Sequence '{sequence_id}' not found."})
+
+        align = TransitionAlignment(alignment.upper())
+        res = transitions_service.validate_source_handles(
+            sequence=seq,
+            track_id=track_id,
+            outgoing_clip_id=outgoing_clip_id,
+            incoming_clip_id=incoming_clip_id,
+            duration_frames=duration_frames,
+            alignment=align,
+        )
+        return json.dumps({"success": True, "validation": res.to_dict()}, indent=2)
+    except Exception as e:
+        return json.dumps({"success": False, "error": str(e)}, indent=2)
+
+@tool
+def list_transition_presets() -> str:
+    """Lists built-in transition presets and their parameters."""
+    from video_studio.transitions_service import transitions_service
+    import json
+    presets = transitions_service.list_presets()
+    return json.dumps({"success": True, "presets": presets}, indent=2)
+
 @tool
 def list_external_connectors() -> str:
     """Lists all registered external connectors and their operations."""
@@ -2092,6 +2286,225 @@ def trace_causal_chain(
         return json.dumps({"success": False, "error": str(e)}, indent=2)
 
 
+
+# --- Module 32: Predictive Intelligence & Risk Forecasting Engine Tools ---
+@tool
+def request_forecast(
+    target_id: str,
+    target_type: str = "TIME_SERIES",
+    target_description: str = "",
+    duration_sec: float = 3600.0,
+    method_name: str = "",
+    inputs_json: str = "[]",
+    parameters_json: str = "{}"
+) -> str:
+    """Generates an evidence-backed baseline forecast with explicit uncertainty and intervals."""
+    from prediction.service import predictive_service
+    from prediction.models import ForecastRequest, ForecastTarget, ForecastHorizon, ForecastInput, ForecastType
+    try:
+        t_type = ForecastType(target_type.upper()) if target_type.upper() in ForecastType.__members__ else ForecastType.TIME_SERIES
+        params = json.loads(parameters_json) if isinstance(parameters_json, str) else parameters_json
+        raw_inputs = json.loads(inputs_json) if isinstance(inputs_json, str) else inputs_json
+
+        parsed_inputs = []
+        for item in raw_inputs:
+            if isinstance(item, dict):
+                parsed_inputs.append(ForecastInput(
+                    input_id=item.get("input_id", f"inp_{uuid.uuid4().hex[:6]}"),
+                    timestamp=float(item.get("timestamp", time.time())),
+                    value=item.get("value"),
+                    source=item.get("source", "tool_input"),
+                    metadata=item.get("metadata", {})
+                ))
+
+        now = time.time()
+        req = ForecastRequest(
+            request_id=f"req-{uuid.uuid4().hex[:8]}",
+            target=ForecastTarget(
+                target_id=target_id,
+                target_description=target_description or f"Forecast for {target_id}",
+                target_type=t_type,
+                observation_unit="units",
+                outcome_definition="Observed historical metric or state",
+            ),
+            horizon=ForecastHorizon.from_duration(duration_sec, now),
+            parameters=params,
+            as_of_time=now,
+        )
+
+        fc = predictive_service.generate_forecast(
+            request=req,
+            inputs=parsed_inputs,
+            method_name=method_name or None
+        )
+        return json.dumps(fc.to_dict(), indent=2)
+    except Exception as e:
+        return json.dumps({"success": False, "error": str(e)}, indent=2)
+
+@tool
+def assess_target_risk(
+    target_id: str,
+    critical_threshold: float = 80.0,
+    impact_score: float = 3.0,
+    horizon_sec: float = 3600.0,
+    inputs_json: str = "[]"
+) -> str:
+    """Evaluates emerging risks by separating likelihood from impact with attributable risk factors."""
+    from prediction.service import predictive_service
+    from prediction.models import ForecastInput
+    try:
+        raw_inputs = json.loads(inputs_json) if isinstance(inputs_json, str) else inputs_json
+        parsed_inputs = []
+        for item in raw_inputs:
+            if isinstance(item, dict):
+                parsed_inputs.append(ForecastInput(
+                    input_id=item.get("input_id", f"inp_{uuid.uuid4().hex[:6]}"),
+                    timestamp=float(item.get("timestamp", time.time())),
+                    value=item.get("value"),
+                    source=item.get("source", "tool_input"),
+                ))
+        assessment = predictive_service.assess_risk(
+            target_id=target_id,
+            inputs=parsed_inputs,
+            critical_threshold=critical_threshold,
+            impact_score=impact_score,
+            horizon_sec=horizon_sec,
+        )
+        return json.dumps(assessment.to_dict(), indent=2)
+    except Exception as e:
+        return json.dumps({"success": False, "error": str(e)}, indent=2)
+
+@tool
+def compare_forecast_scenarios(
+    target_id: str,
+    target_type: str = "TIME_SERIES",
+    scenarios_json: str = "[]",
+    duration_sec: float = 3600.0,
+    method_name: str = "",
+    inputs_json: str = "[]"
+) -> str:
+    """Compares explicit hypothetical what-if scenarios without asserting causal certainty."""
+    from prediction.service import predictive_service
+    from prediction.models import ForecastRequest, ForecastTarget, ForecastHorizon, ForecastInput, ForecastScenario, ForecastAssumption, ForecastType
+    try:
+        t_type = ForecastType(target_type.upper()) if target_type.upper() in ForecastType.__members__ else ForecastType.TIME_SERIES
+        raw_inputs = json.loads(inputs_json) if isinstance(inputs_json, str) else inputs_json
+        parsed_inputs = [
+            ForecastInput(
+                input_id=item.get("input_id", f"inp_{uuid.uuid4().hex[:6]}"),
+                timestamp=float(item.get("timestamp", time.time())),
+                value=item.get("value"),
+                source=item.get("source", "tool_input")
+            )
+            for item in raw_inputs if isinstance(item, dict)
+        ]
+
+        raw_scenarios = json.loads(scenarios_json) if isinstance(scenarios_json, str) else scenarios_json
+        scenarios = []
+        for s in raw_scenarios:
+            if isinstance(s, dict):
+                assumptions = [
+                    ForecastAssumption(
+                        assumption_id=a.get("assumption_id", f"asm_{uuid.uuid4().hex[:4]}"),
+                        description=a.get("description", "")
+                    )
+                    for a in s.get("assumptions", []) if isinstance(a, dict)
+                ]
+                scenarios.append(ForecastScenario(
+                    scenario_id=s.get("scenario_id", f"scn_{uuid.uuid4().hex[:6]}"),
+                    name=s.get("name", "Hypothetical Scenario"),
+                    description=s.get("description", ""),
+                    modified_variables=s.get("modified_variables", {}),
+                    assumptions=assumptions,
+                    is_hypothetical=True
+                ))
+
+        now = time.time()
+        req = ForecastRequest(
+            request_id=f"req-scn-{uuid.uuid4().hex[:8]}",
+            target=ForecastTarget(
+                target_id=target_id,
+                target_description=f"Scenario comparison for {target_id}",
+                target_type=t_type,
+                observation_unit="units",
+                outcome_definition="Scenario outcome",
+            ),
+            horizon=ForecastHorizon.from_duration(duration_sec, now),
+            as_of_time=now,
+        )
+
+        res = predictive_service.compare_scenarios(
+            base_request=req,
+            scenarios=scenarios,
+            inputs=parsed_inputs,
+            method_name=method_name or None,
+        )
+        return json.dumps(res.to_dict(), indent=2)
+    except Exception as e:
+        return json.dumps({"success": False, "error": str(e)}, indent=2)
+
+@tool
+def record_forecast_outcome(
+    forecast_id: str,
+    observed_value: float = None,
+    observed_class: str = "",
+    source: str = "system",
+    notes: str = ""
+) -> str:
+    """Records ground-truth outcome observation after forecast horizon elapses."""
+    from prediction.service import predictive_service
+    try:
+        obs_val = float(observed_value) if observed_value is not None else None
+        obs_cls = observed_class if observed_class else None
+        outcome = predictive_service.record_outcome(
+            forecast_id=forecast_id,
+            observed_value=obs_val,
+            observed_class=obs_cls,
+            source=source,
+            notes=notes or None,
+        )
+        return json.dumps(outcome.to_dict(), indent=2)
+    except Exception as e:
+        return json.dumps({"success": False, "error": str(e)}, indent=2)
+
+@tool
+def evaluate_forecast_accuracy(
+    forecast_id: str,
+    outcome_id: str = ""
+) -> str:
+    """Evaluates forecast accuracy against its recorded outcome without mutating the original forecast."""
+    from prediction.service import predictive_service
+    try:
+        ev = predictive_service.evaluate_forecast(
+            forecast_id=forecast_id,
+            outcome_id=outcome_id or None,
+        )
+        if not ev:
+            return json.dumps({"success": False, "error": f"No outcome found for forecast {forecast_id}."}, indent=2)
+        return json.dumps(ev.to_dict(), indent=2)
+    except Exception as e:
+        return json.dumps({"success": False, "error": str(e)}, indent=2)
+
+@tool
+def check_model_drift(
+    model_name: str,
+    target_id: str,
+    baseline_error: float = None
+) -> str:
+    """Assesses whether recent prediction errors indicate concept or model performance drift."""
+    from prediction.service import predictive_service
+    try:
+        base_err = float(baseline_error) if baseline_error is not None else None
+        assessment = predictive_service.detect_drift(
+            model_name=model_name,
+            target_id=target_id,
+            baseline_error=base_err,
+        )
+        return json.dumps(assessment.to_dict(), indent=2)
+    except Exception as e:
+        return json.dumps({"success": False, "error": str(e)}, indent=2)
+
+
 OMNIA_ALL_TOOLS = [
     unlock_all_devices,
     play_youtube_video,
@@ -2207,6 +2620,16 @@ OMNIA_ALL_TOOLS = [
     add_property_keyframe,
     evaluate_animated_property,
     query_property_keyframes,
+    render_timeline_audio_slice,
+    configure_audio_bus,
+    get_audio_meters,
+    list_audio_devices,
+    add_video_effect,
+    configure_clip_compositing,
+    list_available_video_effects,
+    add_video_transition,
+    validate_transition_handles,
+    list_transition_presets,
     ingest_external_data,
     process_ingestion_pipeline,
     get_data_provenance,
@@ -2226,6 +2649,12 @@ OMNIA_ALL_TOOLS = [
     reconstruct_temporal_state,
     assert_causal_link,
     trace_causal_chain,
+    request_forecast,
+    assess_target_risk,
+    compare_forecast_scenarios,
+    record_forecast_outcome,
+    evaluate_forecast_accuracy,
+    check_model_drift,
 ]
 
 # Backward compatibility alias
