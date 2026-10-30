@@ -2060,7 +2060,7 @@ async def run_diagnostics():
 
 
     # 27. Module 35: Autonomous Cybersecurity, Threat Intelligence & Runtime Defense Engine
-    print("\n[27/27] Checking Module 35: Autonomous Cybersecurity & Runtime Defense...")
+    print("\n[27/28] Checking Module 35: Autonomous Cybersecurity & Runtime Defense...")
     from defense.service import cyber_defense_service
     from defense.models import (
         SecuritySeverity,
@@ -2138,6 +2138,118 @@ async def run_diagnostics():
         import traceback
         traceback.print_exc()
         print(f"      [35] Autonomous Cybersecurity & Defense . FAIL ({e})")
+
+
+    # 28. Module 36: Autonomous Observability, Diagnostics & Self-Healing Infrastructure Engine
+    print("\n[28/28] Checking Module 36: Autonomous Observability, Diagnostics & Self-Healing Engine...")
+    from observability.service import observability_service
+    from observability.models import (
+        ComponentHealthStatus,
+        HealthCheckType,
+        DependencyType,
+        FailureCategory,
+        RemediationAutonomyLevel,
+        RecoveryVerificationStatus,
+    )
+
+    try:
+        # 28a. Component Health Registry & Contract
+        c_db = observability_service.register_component(
+            component_id=f"diag_db_{uuid.uuid4().hex[:6]}",
+            component_name="Diagnostic SQLite DB",
+            module_ownership="Module 36 Check",
+        )
+        c_api = observability_service.register_component(
+            component_id=f"diag_api_{uuid.uuid4().hex[:6]}",
+            component_name="Diagnostic API Gateway",
+            module_ownership="Module 36 Check",
+            critical_dependencies=[c_db.component_id],
+        )
+        assert c_db.current_status == ComponentHealthStatus.HEALTHY
+        print("      [36] Component Health Contracts ....... PASS (Liveness/Readiness/Functional multi-state)")
+
+        # 28b. Dependency Graph & Cascading Failure Propagation
+        dep_edge = observability_service.add_dependency(
+            source_component_id=c_api.component_id,
+            target_component_id=c_db.component_id,
+            dependency_type=DependencyType.HARD,
+            criticality=1.0,
+        )
+        cascades = observability_service.dependencies.calculate_cascading_impact(c_db.component_id)
+        assert cascades["total_downstream_impacted"] >= 1
+        print("      [36] Infrastructure Dependency Graph .. PASS (Directed topology & cascading impact calculation)")
+
+        # 28c. Operational Telemetry & Credential Scrubbing
+        metric = observability_service.record_metric(
+            component_id=c_api.component_id,
+            metric_name="api_request_latency_p99_ms",
+            value=125.0,
+            unit="ms",
+        )
+        trace = observability_service.record_trace(
+            operation_name="fetch_user_data",
+            component_id=c_api.component_id,
+            duration_ms=45.0,
+            status="ERROR",
+            error="Connection failed with bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.e30.secret-token",
+        )
+        assert "[REDACTED_SECRET]" in trace.error_message
+        print("      [36] Telemetry & Secret Scrubbing ...... PASS (Metrics capture & recursive token redaction)")
+
+        # 28d. Root-Cause Diagnostics
+        observability_service.registry.update_health_status(
+            component_id=c_db.component_id,
+            status=ComponentHealthStatus.UNAVAILABLE,
+            message="Database process lock timeout",
+            liveness_ok=False,
+        )
+        observability_service.registry.update_health_status(
+            component_id=c_api.component_id,
+            status=ComponentHealthStatus.DEGRADED,
+            message="Upstream database queries failing",
+            readiness_ok=False,
+        )
+        hypos = observability_service.diagnose_failure(c_api.component_id)
+        assert len(hypos) > 0
+        top_h = hypos[0]
+        assert top_h.suspected_component_id == c_db.component_id
+        assert top_h.failure_category == FailureCategory.DEPENDENCY_FAILURE
+        print("      [36] Diagnostic Root-Cause Analysis ... PASS (Ranked hypotheses with upstream failure isolation)")
+
+        # 28e. Remediation Planning & Level 4 Approval Binding
+        rem_action = observability_service.plan_remediation(
+            target_component_id=c_db.component_id,
+            hypothesis=top_h,
+            autonomy_level=RemediationAutonomyLevel.LEVEL_4_APPROVAL_REQUIRED,
+            proposed_action="restart_worker",
+        )
+        assert rem_action.autonomy_level == RemediationAutonomyLevel.LEVEL_4_APPROVAL_REQUIRED
+        
+        # Refusal without approval token
+        unauth_res = observability_service.execute_and_verify(rem_action.action_id)
+        assert unauth_res["success"] is False
+        assert unauth_res["status"] == RecoveryVerificationStatus.FAILED.value
+        
+        # Authorize and verify
+        observability_service.authorize_remediation(rem_action.action_id, "diag-approved-token-123")
+        # Mark db recovered
+        observability_service.registry.update_health_status(
+            component_id=c_db.component_id,
+            status=ComponentHealthStatus.HEALTHY,
+            message="Recovered",
+            liveness_ok=True,
+            readiness_ok=True,
+            functional_ok=True,
+        )
+        auth_res = observability_service.execute_and_verify(rem_action.action_id)
+        assert auth_res["success"] is True
+        assert auth_res["status"] == RecoveryVerificationStatus.VERIFIED_RECOVERED.value
+        print("      [36] Recovery Verification & Autonomy .. PASS (Level 4 approval gating & strict post-repair checks)")
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        print(f"      [36] Autonomous Observability & Self-Healing . FAIL ({e})")
 
     print("\n" + "=" * 60)
     print("Diagnostics complete.")

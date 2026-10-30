@@ -2056,6 +2056,46 @@ def export_video_sequence(
         return json.dumps({"success": False, "error": str(e)}, indent=2)
 
 @tool
+def generate_media_proxy(
+    project_id: str,
+    asset_id: str,
+    profile_id: str = "profile_720p"
+) -> str:
+    """Generates a non-destructive downscaled proxy representation for a media asset."""
+    from video_studio.proxy_service import proxy_service
+    from video_studio.media_library import media_library_registry
+    import json
+    try:
+        pml = media_library_registry.get_or_create(project_id)
+        asset = pml.get_asset(asset_id)
+        if not asset:
+            return json.dumps({"success": False, "error": f"Asset '{asset_id}' not found."}, indent=2)
+        rec = proxy_service.generate_proxy_for_asset(asset, profile_id=profile_id)
+        return json.dumps({"success": True, "proxy": rec.to_dict()}, indent=2)
+    except Exception as e:
+        return json.dumps({"success": False, "error": str(e)}, indent=2)
+
+@tool
+def relink_missing_media(
+    project_id: str,
+    asset_id: str,
+    new_file_path: str
+) -> str:
+    """Performs transactional relinking for a missing or relocated media asset."""
+    from video_studio.proxy_service import proxy_service
+    from video_studio.media_library import media_library_registry
+    import json
+    try:
+        pml = media_library_registry.get_or_create(project_id)
+        asset = pml.get_asset(asset_id)
+        if not asset:
+            return json.dumps({"success": False, "error": f"Asset '{asset_id}' not found."}, indent=2)
+        res = proxy_service.relink_asset(asset, new_file_path)
+        return json.dumps({"success": res.is_success, "result": res.to_dict()}, indent=2)
+    except Exception as e:
+        return json.dumps({"success": False, "error": str(e)}, indent=2)
+
+@tool
 def list_graphics_templates() -> str:
     """Lists available built-in motion graphics and title templates."""
     from video_studio.motion_graphics_service import motion_graphics_service
@@ -3364,6 +3404,158 @@ def resolve_security_incident(
         return json.dumps({"success": False, "error": str(e)}, indent=2)
 
 
+
+# --- Autonomous Observability, Diagnostics & Self-Healing Tools ---
+@tool
+def register_observable_component(
+    component_id: str,
+    component_name: str,
+    module_ownership: str,
+    version: str = "1.0.0",
+    critical_dependencies_json: str = "[]"
+) -> str:
+    """Registers an observable component and establishes its health contract."""
+    from observability.service import observability_service
+    import json
+    try:
+        deps = json.loads(critical_dependencies_json) if critical_dependencies_json else []
+        rec = observability_service.register_component(
+            component_id=component_id,
+            component_name=component_name,
+            module_ownership=module_ownership,
+            version=version,
+            critical_dependencies=deps,
+        )
+        return json.dumps({"success": True, "component": rec.to_dict()}, indent=2)
+    except Exception as e:
+        return json.dumps({"success": False, "error": str(e)}, indent=2)
+
+@tool
+def record_operational_telemetry(
+    component_id: str,
+    metric_name: str,
+    value: float,
+    unit: str,
+    labels_json: str = "{}"
+) -> str:
+    """Records an operational metric and checks for threshold anomalies."""
+    from observability.service import observability_service
+    import json
+    try:
+        labels = json.loads(labels_json) if labels_json else {}
+        metric = observability_service.record_metric(
+            component_id=component_id,
+            metric_name=metric_name,
+            value=float(value),
+            unit=unit,
+            labels=labels,
+        )
+        return json.dumps({"success": True, "metric": metric.to_dict()}, indent=2)
+    except Exception as e:
+        return json.dumps({"success": False, "error": str(e)}, indent=2)
+
+@tool
+def run_component_health_check(
+    component_id: str
+) -> str:
+    """Executes all registered health checks (liveness, readiness, functional) for a component."""
+    from observability.service import observability_service
+    import json
+    try:
+        results = observability_service.run_health_checks(component_id=component_id)
+        comp = observability_service.registry.get_component(component_id)
+        return json.dumps({
+            "success": True,
+            "component_id": component_id,
+            "current_status": comp.current_status.value if comp else "UNKNOWN",
+            "results": results
+        }, indent=2)
+    except Exception as e:
+        return json.dumps({"success": False, "error": str(e)}, indent=2)
+
+@tool
+def build_infrastructure_dependency_graph(
+    source_component_id: str,
+    target_component_id: str,
+    dependency_type: str = "HARD",
+    criticality: float = 1.0
+) -> str:
+    """Models a dependency edge between components for cascading impact tracking."""
+    from observability.service import observability_service
+    from observability.models import DependencyType
+    import json
+    try:
+        dep_type = DependencyType(dependency_type.upper()) if dependency_type.upper() in [d.value for d in DependencyType] else DependencyType.HARD
+        edge = observability_service.add_dependency(
+            source_component_id=source_component_id,
+            target_component_id=target_component_id,
+            dependency_type=dep_type,
+            criticality=float(criticality),
+        )
+        return json.dumps({"success": True, "edge": edge.to_dict()}, indent=2)
+    except Exception as e:
+        return json.dumps({"success": False, "error": str(e)}, indent=2)
+
+@tool
+def diagnose_operational_failure(
+    component_id: str
+) -> str:
+    """Diagnoses root cause of component degradation or failure, generating ranked hypotheses."""
+    from observability.service import observability_service
+    import json
+    try:
+        hypotheses = observability_service.diagnose_failure(component_id=component_id)
+        return json.dumps({
+            "success": True,
+            "component_id": component_id,
+            "hypotheses_count": len(hypotheses),
+            "hypotheses": [h.to_dict() for h in hypotheses]
+        }, indent=2)
+    except Exception as e:
+        return json.dumps({"success": False, "error": str(e)}, indent=2)
+
+@tool
+def plan_infrastructure_remediation(
+    target_component_id: str,
+    hypothesis_id: str,
+    autonomy_level: int = 3,
+    proposed_action: str = ""
+) -> str:
+    """Plans a controlled remediation action with explicit autonomy boundaries and retry budgets."""
+    from observability.service import observability_service
+    from observability.models import RemediationAutonomyLevel
+    import json
+    try:
+        hypo = observability_service.repo.get_diagnostic_hypothesis(hypothesis_id)
+        if not hypo:
+            return json.dumps({"success": False, "error": f"Hypothesis '{hypothesis_id}' not found"}, indent=2)
+        auto_enum = RemediationAutonomyLevel(int(autonomy_level))
+        action = observability_service.plan_remediation(
+            target_component_id=target_component_id,
+            hypothesis=hypo,
+            autonomy_level=auto_enum,
+            proposed_action=proposed_action if proposed_action else None,
+        )
+        return json.dumps({"success": True, "remediation_action": action.to_dict()}, indent=2)
+    except Exception as e:
+        return json.dumps({"success": False, "error": str(e)}, indent=2)
+
+@tool
+def execute_and_verify_remediation(
+    action_id: str,
+    approval_token: str = ""
+) -> str:
+    """Executes planned remediation and strictly verifies recovery via post-action health checks."""
+    from observability.service import observability_service
+    import json
+    try:
+        if approval_token:
+            observability_service.authorize_remediation(action_id, approval_token)
+        res = observability_service.execute_and_verify(action_id=action_id)
+        return json.dumps(res, indent=2)
+    except Exception as e:
+        return json.dumps({"success": False, "error": str(e)}, indent=2)
+
 OMNIA_ALL_TOOLS = [
     unlock_all_devices,
     play_youtube_video,
@@ -3549,6 +3741,15 @@ OMNIA_ALL_TOOLS = [
     authorize_and_execute_containment,
     preserve_incident_forensics,
     resolve_security_incident,
+    generate_media_proxy,
+    relink_missing_media,
+    register_observable_component,
+    record_operational_telemetry,
+    run_component_health_check,
+    build_infrastructure_dependency_graph,
+    diagnose_operational_failure,
+    plan_infrastructure_remediation,
+    execute_and_verify_remediation,
 ]
 
 # Backward compatibility alias

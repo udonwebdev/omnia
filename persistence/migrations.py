@@ -7,7 +7,7 @@ from typing import List, Tuple
 
 logger = logging.getLogger("Omnia.Persistence.Migrations")
 
-CURRENT_SCHEMA_VERSION = 17
+CURRENT_SCHEMA_VERSION = 18
 
 MIGRATION_V1 = """
 -- Schema Version 1: Durable Task Graph & Crash Recovery Tables
@@ -1668,6 +1668,128 @@ CREATE TABLE IF NOT EXISTS security_posture_assessments (
 """
 
 
+
+
+MIGRATION_V18 = """
+-- Schema Version 18: Autonomous Observability, Diagnostics and Self-Healing Engine
+
+CREATE TABLE IF NOT EXISTS observability_metrics (
+    metric_id TEXT PRIMARY KEY,
+    component_id TEXT NOT NULL,
+    metric_name TEXT NOT NULL,
+    value REAL NOT NULL,
+    unit TEXT NOT NULL,
+    timestamp REAL NOT NULL,
+    labels TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_obs_metrics_comp ON observability_metrics(component_id);
+CREATE INDEX IF NOT EXISTS idx_obs_metrics_name ON observability_metrics(metric_name);
+CREATE INDEX IF NOT EXISTS idx_obs_metrics_time ON observability_metrics(timestamp);
+
+CREATE TABLE IF NOT EXISTS observability_traces (
+    span_id TEXT PRIMARY KEY,
+    trace_id TEXT NOT NULL,
+    operation_name TEXT NOT NULL,
+    component_id TEXT NOT NULL,
+    parent_span_id TEXT,
+    start_time REAL NOT NULL,
+    end_time REAL,
+    duration_ms REAL NOT NULL,
+    status TEXT NOT NULL,
+    tags TEXT NOT NULL,
+    error_message TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_obs_traces_trace ON observability_traces(trace_id);
+CREATE INDEX IF NOT EXISTS idx_obs_traces_comp ON observability_traces(component_id);
+CREATE INDEX IF NOT EXISTS idx_obs_traces_status ON observability_traces(status);
+
+CREATE TABLE IF NOT EXISTS component_health_registry (
+    component_id TEXT PRIMARY KEY,
+    component_name TEXT NOT NULL,
+    module_ownership TEXT NOT NULL,
+    version TEXT NOT NULL,
+    current_status TEXT NOT NULL,
+    status_message TEXT NOT NULL,
+    critical_dependencies TEXT NOT NULL,
+    last_check_timestamp REAL,
+    last_healthy_timestamp REAL,
+    last_failure_timestamp REAL,
+    consecutive_failures INTEGER NOT NULL,
+    liveness_ok INTEGER NOT NULL,
+    readiness_ok INTEGER NOT NULL,
+    functional_ok INTEGER NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_chr_status ON component_health_registry(current_status);
+
+CREATE TABLE IF NOT EXISTS health_check_definitions (
+    check_id TEXT PRIMARY KEY,
+    target_component_id TEXT NOT NULL,
+    name TEXT NOT NULL,
+    check_type TEXT NOT NULL,
+    interval_seconds REAL NOT NULL,
+    timeout_seconds REAL NOT NULL,
+    is_active INTEGER NOT NULL,
+    metadata TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_hcd_target ON health_check_definitions(target_component_id);
+
+CREATE TABLE IF NOT EXISTS infrastructure_dependencies (
+    edge_id TEXT PRIMARY KEY,
+    source_component_id TEXT NOT NULL,
+    target_component_id TEXT NOT NULL,
+    dependency_type TEXT NOT NULL,
+    criticality REAL NOT NULL,
+    failure_propagation_probability REAL NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_inf_dep_src ON infrastructure_dependencies(source_component_id);
+CREATE INDEX IF NOT EXISTS idx_inf_dep_tgt ON infrastructure_dependencies(target_component_id);
+
+CREATE TABLE IF NOT EXISTS diagnostic_hypotheses (
+    hypothesis_id TEXT PRIMARY KEY,
+    suspected_component_id TEXT NOT NULL,
+    failure_category TEXT NOT NULL,
+    confidence REAL NOT NULL,
+    explanation TEXT NOT NULL,
+    supporting_evidence TEXT NOT NULL,
+    contradicting_evidence TEXT NOT NULL,
+    cascading_impact_components TEXT NOT NULL,
+    recommended_remediation_action TEXT,
+    timestamp REAL NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_diag_hyp_comp ON diagnostic_hypotheses(suspected_component_id);
+CREATE INDEX IF NOT EXISTS idx_diag_hyp_cat ON diagnostic_hypotheses(failure_category);
+
+CREATE TABLE IF NOT EXISTS infrastructure_remediations (
+    action_id TEXT PRIMARY KEY,
+    target_component_id TEXT NOT NULL,
+    proposed_action TEXT NOT NULL,
+    failure_category TEXT NOT NULL,
+    reason TEXT NOT NULL,
+    autonomy_level INTEGER NOT NULL,
+    status TEXT NOT NULL,
+    is_reversible INTEGER NOT NULL,
+    approval_request_id TEXT,
+    approval_token TEXT,
+    retry_budget INTEGER NOT NULL,
+    retry_count INTEGER NOT NULL,
+    verification_window_seconds REAL NOT NULL,
+    created_at REAL NOT NULL,
+    executed_at REAL,
+    verified_at REAL,
+    verification_evidence TEXT,
+    error_message TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_inf_rem_target ON infrastructure_remediations(target_component_id);
+CREATE INDEX IF NOT EXISTS idx_inf_rem_status ON infrastructure_remediations(status);
+"""
+
 def backup_database(db_path: str, backup_dir: str = "persistence_backups") -> str:
     """Creates a timestamped snapshot of the SQLite database prior to any schema modification."""
     if not os.path.exists(db_path):
@@ -1890,6 +2012,17 @@ def apply_migrations(db_path: str) -> int:
             conn.commit()
             logger.info("Migration v17 applied successfully.")
             current_version = 17
+
+        if current_version < 18:
+            logger.info("Applying Migration v18 (Autonomous Observability, Diagnostics & Self-Healing Infrastructure Tables)...")
+            cursor.executescript(MIGRATION_V18)
+            cursor.execute(
+                "INSERT INTO schema_migrations (version, applied_at, description) VALUES (?, ?, ?)",
+                (18, time.time(), "Autonomous Observability, Diagnostics and Self-Healing Infrastructure Engine tables")
+            )
+            conn.commit()
+            logger.info("Migration v18 applied successfully.")
+            current_version = 18
 
         return current_version
     except Exception as e:
