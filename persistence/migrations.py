@@ -7,7 +7,7 @@ from typing import List, Tuple
 
 logger = logging.getLogger("Omnia.Persistence.Migrations")
 
-CURRENT_SCHEMA_VERSION = 15
+CURRENT_SCHEMA_VERSION = 16
 
 MIGRATION_V1 = """
 -- Schema Version 1: Durable Task Graph & Crash Recovery Tables
@@ -1394,6 +1394,153 @@ CREATE INDEX IF NOT EXISTS idx_ldr_model ON learning_drift_records(model_id, ver
 CREATE INDEX IF NOT EXISTS idx_ldr_severity ON learning_drift_records(severity);
 """
 
+
+MIGRATION_V16 = """
+-- Schema Version 16: Autonomous Simulation, Digital Twin & Scenario Testing Engine
+
+CREATE TABLE IF NOT EXISTS simulation_environments (
+    environment_id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    env_type TEXT NOT NULL,
+    classification TEXT NOT NULL DEFAULT 'TEST',
+    version TEXT NOT NULL DEFAULT '1.0.0',
+    owner TEXT NOT NULL DEFAULT 'system',
+    model_references_json TEXT NOT NULL DEFAULT '[]',
+    supported_capabilities_json TEXT NOT NULL DEFAULT '[]',
+    state_schema_json TEXT NOT NULL DEFAULT '{}',
+    supported_action_types_json TEXT NOT NULL DEFAULT '[]',
+    constraints_json TEXT NOT NULL DEFAULT '{}',
+    resource_limits_json TEXT NOT NULL DEFAULT '{}',
+    isolation_level TEXT NOT NULL DEFAULT 'PROCESS_ISOLATED',
+    fidelity_classification TEXT NOT NULL DEFAULT 'UNVALIDATED',
+    data_classification TEXT NOT NULL DEFAULT 'INTERNAL',
+    status TEXT NOT NULL DEFAULT 'ACTIVE',
+    created_at REAL NOT NULL,
+    updated_at REAL NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_sim_env_type ON simulation_environments(env_type);
+CREATE INDEX IF NOT EXISTS idx_sim_env_class ON simulation_environments(classification);
+
+CREATE TABLE IF NOT EXISTS digital_twins (
+    twin_id TEXT PRIMARY KEY,
+    source_system_id TEXT NOT NULL,
+    source_system_type TEXT NOT NULL,
+    version TEXT NOT NULL DEFAULT '1.0.0',
+    sync_mode TEXT NOT NULL DEFAULT 'STATIC',
+    state_schema_version TEXT NOT NULL DEFAULT '1.0.0',
+    observed_state_json TEXT NOT NULL DEFAULT '{}',
+    inferred_state_json TEXT NOT NULL DEFAULT '{}',
+    simulated_state_json TEXT NOT NULL DEFAULT '{}',
+    capability_model_json TEXT NOT NULL DEFAULT '{}',
+    constraints_json TEXT NOT NULL DEFAULT '{}',
+    dependencies_json TEXT NOT NULL DEFAULT '[]',
+    known_omissions_json TEXT NOT NULL DEFAULT '[]',
+    last_sync_time REAL NOT NULL,
+    freshness_seconds REAL NOT NULL DEFAULT 0.0,
+    fidelity_status TEXT NOT NULL DEFAULT 'UNVALIDATED',
+    provenance_hash TEXT NOT NULL,
+    created_at REAL NOT NULL,
+    updated_at REAL NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_dt_source ON digital_twins(source_system_id, source_system_type);
+CREATE INDEX IF NOT EXISTS idx_dt_fidelity ON digital_twins(fidelity_status);
+
+CREATE TABLE IF NOT EXISTS simulation_snapshots (
+    snapshot_id TEXT PRIMARY KEY,
+    environment_id TEXT NOT NULL,
+    source_version TEXT NOT NULL,
+    captured_at REAL NOT NULL,
+    state_schema_version TEXT NOT NULL DEFAULT '1.0.0',
+    state_payload_json TEXT NOT NULL DEFAULT '{}',
+    included_components_json TEXT NOT NULL DEFAULT '[]',
+    excluded_components_json TEXT NOT NULL DEFAULT '[]',
+    integrity_digest TEXT NOT NULL,
+    consistency_status TEXT NOT NULL DEFAULT 'CONSISTENT',
+    data_classification TEXT NOT NULL DEFAULT 'INTERNAL',
+    known_limitations_json TEXT NOT NULL DEFAULT '[]',
+    created_by TEXT NOT NULL DEFAULT 'system'
+);
+
+CREATE INDEX IF NOT EXISTS idx_sim_snap_env ON simulation_snapshots(environment_id);
+
+CREATE TABLE IF NOT EXISTS simulation_scenarios (
+    scenario_id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    scenario_type TEXT NOT NULL,
+    environment_id TEXT NOT NULL,
+    initial_snapshot_id TEXT NOT NULL,
+    proposed_actions_json TEXT NOT NULL DEFAULT '[]',
+    preconditions_json TEXT NOT NULL DEFAULT '{}',
+    constraints_json TEXT NOT NULL DEFAULT '{}',
+    expected_observations_json TEXT NOT NULL DEFAULT '{}',
+    time_horizon_seconds REAL NOT NULL DEFAULT 60.0,
+    resource_budget_json TEXT NOT NULL DEFAULT '{}',
+    uncertainty_assumptions_json TEXT NOT NULL DEFAULT '{}',
+    evaluation_metrics_json TEXT NOT NULL DEFAULT '[]',
+    created_at REAL NOT NULL,
+    created_by TEXT NOT NULL DEFAULT 'system'
+);
+
+CREATE INDEX IF NOT EXISTS idx_sim_scen_type ON simulation_scenarios(scenario_type);
+CREATE INDEX IF NOT EXISTS idx_sim_scen_env ON simulation_scenarios(environment_id);
+
+CREATE TABLE IF NOT EXISTS simulation_executions (
+    simulation_id TEXT PRIMARY KEY,
+    scenario_id TEXT NOT NULL,
+    environment_id TEXT NOT NULL,
+    twin_id TEXT,
+    snapshot_id TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'CREATED',
+    current_step INTEGER NOT NULL DEFAULT 0,
+    total_steps INTEGER NOT NULL DEFAULT 0,
+    action_history_json TEXT NOT NULL DEFAULT '[]',
+    state_transitions_json TEXT NOT NULL DEFAULT '[]',
+    events_generated_json TEXT NOT NULL DEFAULT '[]',
+    resource_consumption_json TEXT NOT NULL DEFAULT '{}',
+    result_summary_json TEXT NOT NULL DEFAULT '{}',
+    fidelity_classification TEXT NOT NULL DEFAULT 'UNVALIDATED',
+    started_at REAL,
+    completed_at REAL,
+    error_message TEXT,
+    created_at REAL NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_sim_exec_status ON simulation_executions(status);
+CREATE INDEX IF NOT EXISTS idx_sim_exec_scen ON simulation_executions(scenario_id);
+
+CREATE TABLE IF NOT EXISTS simulation_faults (
+    fault_id TEXT PRIMARY KEY,
+    simulation_id TEXT NOT NULL,
+    fault_type TEXT NOT NULL,
+    target_component TEXT NOT NULL,
+    activation_step INTEGER NOT NULL DEFAULT 0,
+    duration_steps INTEGER NOT NULL DEFAULT 1,
+    severity TEXT NOT NULL DEFAULT 'HIGH',
+    injected_at REAL NOT NULL,
+    recovery_observed INTEGER NOT NULL DEFAULT 0,
+    recovery_details_json TEXT NOT NULL DEFAULT '{}'
+);
+
+CREATE INDEX IF NOT EXISTS idx_sim_fault_sim ON simulation_faults(simulation_id);
+
+CREATE TABLE IF NOT EXISTS simulation_fidelity_records (
+    record_id TEXT PRIMARY KEY,
+    simulation_id TEXT NOT NULL,
+    twin_id TEXT,
+    fidelity_level TEXT NOT NULL,
+    reality_observation_id TEXT,
+    deviation_metrics_json TEXT NOT NULL DEFAULT '{}',
+    failed_assumptions_json TEXT NOT NULL DEFAULT '[]',
+    unexplained_deviations_json TEXT NOT NULL DEFAULT '[]',
+    assessed_at REAL NOT NULL,
+    recommended_learning_signal INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE INDEX IF NOT EXISTS idx_sfr_sim ON simulation_fidelity_records(simulation_id);
+"""
+
 def backup_database(db_path: str, backup_dir: str = "persistence_backups") -> str:
     """Creates a timestamped snapshot of the SQLite database prior to any schema modification."""
     if not os.path.exists(db_path):
@@ -1592,6 +1739,18 @@ def apply_migrations(db_path: str) -> int:
             conn.commit()
             logger.info("Migration v15 applied successfully.")
             current_version = 15
+
+        if current_version < 16:
+            logger.info("Applying Migration v16 (Autonomous Simulation, Digital Twin & Scenario Testing Tables)...")
+            cursor.executescript(MIGRATION_V16)
+            cursor.execute(
+                "INSERT INTO schema_migrations (version, applied_at, description) VALUES (?, ?, ?)",
+                (16, time.time(), "Autonomous Simulation, Digital Twin & Scenario Testing Engine tables")
+            )
+            conn.commit()
+            logger.info("Migration v16 applied successfully.")
+            current_version = 16
+
 
         return current_version
     except Exception as e:

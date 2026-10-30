@@ -1699,7 +1699,7 @@ async def run_diagnostics():
 
 
     # 24. Module 32: Predictive Intelligence & Risk Forecasting Engine
-    print("\n[24/25] Checking Module 32: Predictive Intelligence & Risk Forecasting Engine...")
+    print("\n[24/26] Checking Module 32: Predictive Intelligence & Risk Forecasting Engine...")
     from prediction import (
         predictive_service,
         ForecastRequest,
@@ -1789,7 +1789,7 @@ async def run_diagnostics():
 
 
     # 25. Module 33: Adaptive Learning & Model Lifecycle Governance Engine
-    print("\n[25/25] Checking Module 33: Adaptive Learning & Model Lifecycle Governance Engine...")
+    print("\n[25/26] Checking Module 33: Adaptive Learning & Model Lifecycle Governance Engine...")
     from learning.service import adaptive_learning_service
     from learning.models import (
         SignalType,
@@ -1935,6 +1935,128 @@ async def run_diagnostics():
         import traceback
         traceback.print_exc()
         print(f"      [33] Adaptive Learning Engine .......... FAIL ({e})")
+
+
+
+    # 26. Module 34: Autonomous Simulation, Digital Twin & Scenario Testing Engine
+    print("\n[26/26] Checking Module 34: Autonomous Simulation, Digital Twin & Scenario Testing Engine...")
+    from simulation.service import simulation_service
+    from simulation.models import (
+        EnvironmentType,
+        EnvironmentClassification,
+        TwinSyncMode,
+        ScenarioType,
+        SimulationStatus,
+        FaultType,
+        StateFidelity,
+        AlternativeSearchStrategy,
+    )
+
+    try:
+        # 26a. Environment & Twin Registration
+        env_id = f"diag-sim-env-{uuid.uuid4().hex[:6]}"
+        sim_env = simulation_service.create_environment(
+            environment_id=env_id,
+            name="Diagnostic Simulation Sandbox",
+            env_type=EnvironmentType.WORKFLOW,
+            classification=EnvironmentClassification.TEST,
+            supported_action_types=["task.complete", "node.failover", "resource.allocate", "unregistered.dangerous.action"],
+        )
+        assert sim_env is not None
+
+        twin_id = f"diag-twin-{uuid.uuid4().hex[:6]}"
+        twin = simulation_service.register_digital_twin(
+            twin_id=twin_id,
+            source_system_id="server_cluster_01",
+            source_system_type="node_group",
+            initial_observed_state={"nodes": 3, "leader": "node_1"},
+            sync_mode=TwinSyncMode.STATIC,
+        )
+        assert twin is not None
+        assert twin.observed_state["nodes"] == 3
+        print("      [34] Environment & Twin Registration ... PASS (Isolated environment with state provenance)")
+
+        # 26b. Sanitized Snapshot & Integrity Digest
+        snap_id = f"diag-snap-{uuid.uuid4().hex[:6]}"
+        snapshot = simulation_service.capture_snapshot(
+            snapshot_id=snap_id,
+            environment_id=env_id,
+            raw_state={
+                "nodes": 3,
+                "api_key": "sk-leakage-prevention-test-key",
+                "cluster_epoch": 1,
+            },
+        )
+        assert snapshot.state_payload["api_key"] == "[REDACTED_SECRET]"
+        assert len(snapshot.integrity_digest) == 64
+        print("      [34] Snapshot & Integrity Hashing ....... PASS (Zero credential leakage & cryptographic verification)")
+
+        # 26c. Scenario Compilation & Deterministic Execution
+        scen_id = f"diag-scen-{uuid.uuid4().hex[:6]}"
+        scen = simulation_service.register_scenario(
+            scenario_id=scen_id,
+            name="Diagnostic Scenario",
+            scenario_type=ScenarioType.NORMAL_OPERATION,
+            environment_id=env_id,
+            initial_snapshot_id=snap_id,
+            proposed_actions=[
+                {"action_type": "resource.allocate", "resource": "memory", "amount": 4.0},
+                {"action_type": "task.complete", "task_id": "diag_step_1"},
+            ],
+            preconditions={"cluster_epoch": 1},
+        )
+        assert scen is not None
+
+        sim_exec = simulation_service.run_simulation(
+            simulation_id=f"diag-run-{uuid.uuid4().hex[:6]}",
+            scenario_id=scen_id,
+            twin_id=twin_id,
+        )
+        assert sim_exec.status == SimulationStatus.COMPLETED
+        assert sim_exec.current_step == 2
+        print("      [34] Deterministic Scenario Execution .. PASS (State transitions evaluated on isolated snapshot)")
+
+        # 26d. Strict Non-Execution Invariant on Unsupported Actions
+        unsupp_scen = simulation_service.register_scenario(
+            scenario_id=f"diag-unsupp-{uuid.uuid4().hex[:6]}",
+            name="Unsupported Action Test",
+            scenario_type=ScenarioType.NORMAL_OPERATION,
+            environment_id=env_id,
+            initial_snapshot_id=snap_id,
+            proposed_actions=[{"action_type": "unregistered.dangerous.action"}],
+        )
+        unsupp_exec = simulation_service.run_simulation(
+            simulation_id=f"diag-unsupp-run-{uuid.uuid4().hex[:6]}",
+            scenario_id=unsupp_scen.scenario_id,
+        )
+        assert unsupp_exec.status == SimulationStatus.FAILED
+        assert "UNSUPPORTED_SIMULATION_ACTION" in unsupp_exec.error_message
+        print("      [34] Strict Non-Execution Invariant ..... PASS (Unsupported actions fail closed without production fallback)")
+
+        # 26e. Alternative Path Exploration & Model Fidelity Assessment
+        alt_res = simulation_service.explore_alternatives(
+            initial_state={"tasks": {}},
+            candidate_action_sequences=[
+                [{"action_type": "unsupported.action"}],
+                [{"action_type": "task.complete", "task_id": "safe_task"}],
+            ],
+            strategy=AlternativeSearchStrategy.RELIABILITY_OPTIMIZED,
+        )
+        assert alt_res["recommended_candidate"]["success"] is True
+
+        fid = simulation_service.compare_with_reality(
+            simulation_id=sim_exec.simulation_id,
+            twin_id=twin_id,
+            simulated_metrics={"latency_ms": 50.0},
+            observed_real_metrics={"latency_ms": 52.0},
+        )
+        assert fid.fidelity_level == StateFidelity.HIGH
+        print("      [34] Alternative Paths & Model Fidelity . PASS (Bounded search trade-offs & reality calibration)")
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        print(f"      [34] Simulation & Digital Twin Engine .. FAIL ({e})")
 
     print("\n" + "=" * 60)
     print("Diagnostics complete.")

@@ -1749,6 +1749,102 @@ def list_transition_presets() -> str:
     presets = transitions_service.list_presets()
     return json.dumps({"success": True, "presets": presets}, indent=2)
 
+# --- Video Studio Module 13: Captions & Subtitles Tools ---
+@tool
+def create_subtitle_track(
+    project_id: str,
+    name: str = "Subtitles",
+    language: str = "en",
+    format: str = "SRT",
+    sequence_id: str = ""
+) -> str:
+    """Creates a new subtitle or caption document for a project or sequence."""
+    from video_studio.captions_service import captions_service
+    from video_studio.captions_models import SubtitleFormat
+    import json
+    try:
+        fmt = SubtitleFormat(format.upper())
+        doc = captions_service.create_subtitle_document(
+            project_id=project_id,
+            name=name,
+            language=language,
+            format=fmt,
+            sequence_id=sequence_id or None,
+        )
+        return json.dumps({"success": True, "document": doc.to_dict()}, indent=2)
+    except Exception as e:
+        return json.dumps({"success": False, "error": str(e)}, indent=2)
+
+@tool
+def add_subtitle_cue_item(
+    document_id: str,
+    start_seconds: float,
+    end_seconds: float,
+    text: str,
+    speaker: str = ""
+) -> str:
+    """Adds a timed subtitle cue to a subtitle document."""
+    from video_studio.captions_service import captions_service
+    import json
+    try:
+        cue = captions_service.add_cue(
+            document_id=document_id,
+            start_time_seconds=start_seconds,
+            end_time_seconds=end_seconds,
+            text=text,
+            speaker_name=speaker or None,
+        )
+        return json.dumps({"success": True, "cue": cue.to_dict()}, indent=2)
+    except Exception as e:
+        return json.dumps({"success": False, "error": str(e)}, indent=2)
+
+@tool
+def import_subtitle_file(
+    project_id: str,
+    content: str,
+    format: str = "SRT",
+    sequence_id: str = ""
+) -> str:
+    """Parses and imports SRT or WebVTT content into a new subtitle document."""
+    from video_studio.captions_service import captions_service
+    from video_studio.captions_models import SubtitleFormat
+    import json
+    try:
+        fmt = SubtitleFormat(format.upper())
+        doc = captions_service.import_subtitles(
+            project_id=project_id,
+            content=content,
+            format=fmt,
+            sequence_id=sequence_id or None,
+        )
+        return json.dumps({"success": True, "document": doc.to_dict()}, indent=2)
+    except Exception as e:
+        return json.dumps({"success": False, "error": str(e)}, indent=2)
+
+@tool
+def export_subtitle_file(document_id: str, format: str = "SRT") -> str:
+    """Exports a subtitle document to standard SRT or WebVTT format."""
+    from video_studio.captions_service import captions_service
+    from video_studio.captions_models import SubtitleFormat
+    import json
+    try:
+        fmt = SubtitleFormat(format.upper())
+        out = captions_service.export_subtitles(document_id, format=fmt)
+        return json.dumps({"success": True, "format": fmt.value, "content": out}, indent=2)
+    except Exception as e:
+        return json.dumps({"success": False, "error": str(e)}, indent=2)
+
+@tool
+def search_transcript_text(transcript_id: str, query: str) -> str:
+    """Searches transcript text and returns matching timed segments."""
+    from video_studio.captions_service import captions_service
+    import json
+    try:
+        results = captions_service.search_transcript(transcript_id, query)
+        return json.dumps({"success": True, "results": results}, indent=2)
+    except Exception as e:
+        return json.dumps({"success": False, "error": str(e)}, indent=2)
+
 @tool
 def list_external_connectors() -> str:
     """Lists all registered external connectors and their operations."""
@@ -2724,6 +2820,167 @@ def assess_learning_drift(
     except Exception as e:
         return json.dumps({"success": False, "error": str(e)}, indent=2)
 
+# --- Module 34: Autonomous Simulation, Digital Twin & Scenario Testing Tools ---
+@tool
+def create_simulation_environment(
+    environment_id: str,
+    name: str,
+    env_type: str = "WORKFLOW",
+    classification: str = "TEST",
+) -> str:
+    """Registers an isolated simulation sandbox environment."""
+    from simulation.service import simulation_service
+    from simulation.models import EnvironmentType, EnvironmentClassification
+    try:
+        e_type = EnvironmentType(env_type)
+        e_class = EnvironmentClassification(classification)
+        env = simulation_service.create_environment(
+            environment_id=environment_id,
+            name=name,
+            env_type=e_type,
+            classification=e_class,
+        )
+        return json.dumps({"success": True, "environment": env.to_dict()}, indent=2)
+    except Exception as e:
+        return json.dumps({"success": False, "error": str(e)}, indent=2)
+
+@tool
+def register_digital_twin(
+    twin_id: str,
+    source_system_id: str,
+    source_system_type: str,
+    initial_observed_state: Dict[str, Any] = None,
+    sync_mode: str = "STATIC",
+) -> str:
+    """Registers a versioned digital twin representation of a physical or logical system."""
+    from simulation.service import simulation_service
+    from simulation.models import TwinSyncMode
+    try:
+        s_mode = TwinSyncMode(sync_mode)
+        twin = simulation_service.register_digital_twin(
+            twin_id=twin_id,
+            source_system_id=source_system_id,
+            source_system_type=source_system_type,
+            initial_observed_state=initial_observed_state or {},
+            sync_mode=s_mode,
+        )
+        return json.dumps({"success": True, "twin": twin.to_dict()}, indent=2)
+    except Exception as e:
+        return json.dumps({"success": False, "error": str(e)}, indent=2)
+
+@tool
+def capture_state_snapshot(
+    snapshot_id: str,
+    environment_id: str,
+    raw_state: Dict[str, Any],
+) -> str:
+    """Captures an immutable, sanitized initial state snapshot with cryptographic integrity digest."""
+    from simulation.service import simulation_service
+    try:
+        snap = simulation_service.capture_snapshot(
+            snapshot_id=snapshot_id,
+            environment_id=environment_id,
+            raw_state=raw_state,
+        )
+        return json.dumps({"success": True, "snapshot": snap.to_dict()}, indent=2)
+    except Exception as e:
+        return json.dumps({"success": False, "error": str(e)}, indent=2)
+
+@tool
+def register_simulation_scenario(
+    scenario_id: str,
+    name: str,
+    scenario_type: str,
+    environment_id: str,
+    initial_snapshot_id: str,
+    proposed_actions: List[Dict[str, Any]],
+    preconditions: Dict[str, Any] = None,
+    time_horizon_seconds: float = 60.0,
+) -> str:
+    """Compiles and registers an executable simulation scenario with precondition checks."""
+    from simulation.service import simulation_service
+    from simulation.models import ScenarioType
+    try:
+        scen_type = ScenarioType(scenario_type)
+        scen = simulation_service.register_scenario(
+            scenario_id=scenario_id,
+            name=name,
+            scenario_type=scen_type,
+            environment_id=environment_id,
+            initial_snapshot_id=initial_snapshot_id,
+            proposed_actions=proposed_actions,
+            preconditions=preconditions or {},
+            time_horizon_seconds=float(time_horizon_seconds),
+        )
+        return json.dumps({"success": True, "scenario": scen.to_dict()}, indent=2)
+    except Exception as e:
+        return json.dumps({"success": False, "error": str(e)}, indent=2)
+
+@tool
+def execute_simulation(
+    simulation_id: str,
+    scenario_id: str,
+    twin_id: str = None,
+) -> str:
+    """Executes deterministic simulation on isolated state strictly without touching production."""
+    from simulation.service import simulation_service
+    try:
+        rec = simulation_service.run_simulation(
+            simulation_id=simulation_id,
+            scenario_id=scenario_id,
+            twin_id=twin_id or None,
+        )
+        return json.dumps({"success": True, "execution": rec.to_dict()}, indent=2)
+    except Exception as e:
+        return json.dumps({"success": False, "error": str(e)}, indent=2)
+
+@tool
+def explore_simulation_alternatives(
+    initial_state: Dict[str, Any],
+    candidate_action_sequences: List[List[Dict[str, Any]]],
+    strategy: str = "RELIABILITY_OPTIMIZED",
+) -> str:
+    """Explores alternative execution branches within bounded resource limits."""
+    from simulation.service import simulation_service
+    from simulation.models import AlternativeSearchStrategy
+    try:
+        strat = AlternativeSearchStrategy(strategy)
+        res = simulation_service.explore_alternatives(
+            initial_state=initial_state,
+            candidate_action_sequences=candidate_action_sequences,
+            strategy=strat,
+        )
+        return json.dumps({"success": True, "exploration": res}, indent=2)
+    except Exception as e:
+        return json.dumps({"success": False, "error": str(e)}, indent=2)
+
+@tool
+def inject_simulation_fault(
+    fault_id: str,
+    simulation_id: str,
+    fault_type: str,
+    target_component: str,
+    activation_step: int = 1,
+    duration_steps: int = 1,
+) -> str:
+    """Injects synthetic node crashes, network partitions, or timeouts inside isolated simulation."""
+    from simulation.service import simulation_service
+    from simulation.models import FaultType
+    try:
+        f_type = FaultType(fault_type)
+        fault = simulation_service.inject_fault(
+            fault_id=fault_id,
+            simulation_id=simulation_id,
+            fault_type=f_type,
+            target_component=target_component,
+            activation_step=int(activation_step),
+            duration_steps=int(duration_steps),
+        )
+        return json.dumps({"success": True, "fault": fault.to_dict()}, indent=2)
+    except Exception as e:
+        return json.dumps({"success": False, "error": str(e)}, indent=2)
+
+
 
 
 OMNIA_ALL_TOOLS = [
@@ -2851,6 +3108,11 @@ OMNIA_ALL_TOOLS = [
     add_video_transition,
     validate_transition_handles,
     list_transition_presets,
+    create_subtitle_track,
+    add_subtitle_cue_item,
+    import_subtitle_file,
+    export_subtitle_file,
+    search_transcript_text,
     ingest_external_data,
     process_ingestion_pipeline,
     get_data_provenance,
@@ -2883,6 +3145,13 @@ OMNIA_ALL_TOOLS = [
     execute_controlled_rollout,
     execute_controlled_rollback,
     assess_learning_drift,
+    create_simulation_environment,
+    register_digital_twin,
+    capture_state_snapshot,
+    register_simulation_scenario,
+    execute_simulation,
+    explore_simulation_alternatives,
+    inject_simulation_fault,
 ]
 
 # Backward compatibility alias
