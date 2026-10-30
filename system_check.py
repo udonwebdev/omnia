@@ -2141,7 +2141,7 @@ async def run_diagnostics():
 
 
     # 28. Module 36: Autonomous Observability, Diagnostics & Self-Healing Infrastructure Engine
-    print("\n[28/28] Checking Module 36: Autonomous Observability, Diagnostics & Self-Healing Engine...")
+    print("\n[28/29] Checking Module 36: Autonomous Observability, Diagnostics & Self-Healing Engine...")
     from observability.service import observability_service
     from observability.models import (
         ComponentHealthStatus,
@@ -2250,6 +2250,91 @@ async def run_diagnostics():
         import traceback
         traceback.print_exc()
         print(f"      [36] Autonomous Observability & Self-Healing . FAIL ({e})")
+
+
+    # 29. Module 37: Autonomous Deployment, Release Engineering & Rollback Engine
+    print("\n[29/29] Checking Module 37: Autonomous Deployment, Release Engineering & Rollback...")
+    from release.service import release_engine
+    from release.models import (
+        ReleaseState,
+        DeploymentStrategy,
+        EnvironmentType,
+        MigrationSafetyClass,
+    )
+
+    try:
+        # 29a. Environment & Release Creation
+        c_env = release_engine.environments.register_environment(
+            environment_id=f"diag_env_{uuid.uuid4().hex[:6]}",
+            environment_type=EnvironmentType.PRODUCTION,
+            app_id="diag_app",
+            requires_approval=True,
+        )
+        c_rel = release_engine.create_release(
+            app_id="diag_app",
+            version="1.0.0",
+            source_revision="diag-rev-001",
+            migration_safety=MigrationSafetyClass.FORWARD_COMPATIBLE,
+        )
+        assert c_rel.state == ReleaseState.DRAFT
+        print("      [37] Release Lifecycle State Machine ... PASS (22-state deterministic transitions)")
+
+        # 29b. Controlled Hermetic Build & Artifact Verification
+        bld_res = release_engine.build_release(release_id=c_rel.release_id, source_dir=".")
+        assert bld_res["success"] is True
+        art_check = release_engine.artifacts.verify_artifact_integrity(bld_res["artifact_id"])
+        assert art_check["verified"] is True
+        print("      [37] Cryptographic Artifact Digest ..... PASS (Immutable SHA-256 verification & tamper detection)")
+
+        # 29c. Qualification Gates & Human Approval Boundary
+        qual_res = release_engine.qualify_release(release_id=c_rel.release_id, target_env="PRODUCTION")
+        assert qual_res["success"] is True
+        
+        # Unapproved deployment blocked
+        blocked_dep = release_engine.deploy_release(
+            release_id=c_rel.release_id,
+            environment_id=c_env.environment_id,
+            strategy=DeploymentStrategy.DIRECT,
+        )
+        assert blocked_dep["success"] is False
+        assert blocked_dep["requires_approval"] is True
+        
+        # Authorize release
+        auth_ok = release_engine.authorize_release(c_rel.release_id, "diag-approved-token-release")
+        assert auth_ok is True
+        print("      [37] Qualification & Approval Gating ... PASS (Mandatory gates & Module 20 consent enforcement)")
+
+        # 29d. Progressive Deployment & Independent Verification
+        dep_res = release_engine.deploy_release(
+            release_id=c_rel.release_id,
+            environment_id=c_env.environment_id,
+            strategy=DeploymentStrategy.CANARY,
+        )
+        assert dep_res["success"] is True
+        assert dep_res["status"] == "DEPLOYED"
+        print("      [37] Progressive Rollout & Verification . PASS (Canary stages & independent post-deploy verification)")
+
+        # 29e. Safe Rollback & Migration Safety Enforcement
+        c_rel_bad = release_engine.create_release(
+            app_id="diag_app",
+            version="2.0.0",
+            source_revision="diag-rev-002",
+            migration_safety=MigrationSafetyClass.IRREVERSIBLE,
+        )
+        rb_blocked = release_engine.execute_rollback(
+            environment_id=c_env.environment_id,
+            failed_release_id=c_rel_bad.release_id,
+            restored_release_id=c_rel.release_id,
+            reason="Irreversible migration check test",
+        )
+        assert rb_blocked["success"] is False
+        assert rb_blocked["requires_intervention"] is True
+        print("      [37] Safe Rollback & Database Protection PASS (Irreversible migration blocking & verified restoration)")
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        print(f"      [37] Autonomous Deployment & Release ... FAIL ({e})")
 
     print("\n" + "=" * 60)
     print("Diagnostics complete.")

@@ -3556,6 +3556,148 @@ def execute_and_verify_remediation(
     except Exception as e:
         return json.dumps({"success": False, "error": str(e)}, indent=2)
 
+
+# --- Autonomous Deployment, Release Engineering & Rollback Tools ---
+@tool
+def create_software_release(
+    app_id: str,
+    version: str,
+    source_revision: str,
+    target_environment: str = "PRODUCTION",
+    description: str = "",
+    migration_safety: str = "FORWARD_COMPATIBLE"
+) -> str:
+    """Creates a new release record in DRAFT state."""
+    from release.service import release_engine
+    from release.models import MigrationSafetyClass
+    import json
+    try:
+        mig = MigrationSafetyClass(migration_safety.upper()) if migration_safety.upper() in [m.value for m in MigrationSafetyClass] else MigrationSafetyClass.FORWARD_COMPATIBLE
+        rel = release_engine.create_release(
+            app_id=app_id,
+            version=version,
+            source_revision=source_revision,
+            target_environment=target_environment,
+            description=description,
+            migration_safety=mig,
+        )
+        return json.dumps({"success": True, "release": rel.to_dict()}, indent=2)
+    except Exception as e:
+        return json.dumps({"success": False, "error": str(e)}, indent=2)
+
+@tool
+def build_and_register_artifact(
+    release_id: str,
+    source_dir: str
+) -> str:
+    """Builds software package hermetically and registers immutable cryptographic artifact."""
+    from release.service import release_engine
+    import json
+    try:
+        res = release_engine.build_release(release_id=release_id, source_dir=source_dir)
+        return json.dumps(res, indent=2)
+    except Exception as e:
+        return json.dumps({"success": False, "error": str(e)}, indent=2)
+
+@tool
+def qualify_software_release(
+    release_id: str,
+    target_env: str = "PRODUCTION",
+    custom_checks_json: str = "{}"
+) -> str:
+    """Runs mandatory qualification gates (tests, security, migration, artifact integrity)."""
+    from release.service import release_engine
+    import json
+    try:
+        custom_checks = json.loads(custom_checks_json) if custom_checks_json else {}
+        res = release_engine.qualify_release(
+            release_id=release_id,
+            target_env=target_env,
+            custom_checks=custom_checks,
+        )
+        return json.dumps(res, indent=2)
+    except Exception as e:
+        return json.dumps({"success": False, "error": str(e)}, indent=2)
+
+@tool
+def request_release_deployment(
+    release_id: str,
+    environment_id: str,
+    strategy: str = "CANARY",
+    approval_token: str = ""
+) -> str:
+    """Deploys a qualified release progressively while enforcing human approval boundaries."""
+    from release.service import release_engine
+    from release.models import DeploymentStrategy
+    import json
+    try:
+        strat = DeploymentStrategy(strategy.upper()) if strategy.upper() in [s.value for s in DeploymentStrategy] else DeploymentStrategy.CANARY
+        if approval_token:
+            release_engine.authorize_release(release_id, approval_token)
+        res = release_engine.deploy_release(
+            release_id=release_id,
+            environment_id=environment_id,
+            strategy=strat,
+        )
+        return json.dumps(res, indent=2)
+    except Exception as e:
+        return json.dumps({"success": False, "error": str(e)}, indent=2)
+
+@tool
+def execute_and_verify_deployment(
+    deployment_id: str,
+    target_endpoint: str,
+    expected_digest: str
+) -> str:
+    """Independently verifies running release against expected cryptographic digest and health criteria."""
+    from release.service import release_engine
+    import json
+    try:
+        res = release_engine.verifier.verify_deployment(
+            deployment_id=deployment_id,
+            target_endpoint=target_endpoint,
+            expected_digest=expected_digest,
+        )
+        return json.dumps(res, indent=2)
+    except Exception as e:
+        return json.dumps({"success": False, "error": str(e)}, indent=2)
+
+@tool
+def reconcile_environment_release(
+    environment_id: str
+) -> str:
+    """Compares desired release state against actual provider state to detect unapproved drift."""
+    from release.service import release_engine
+    import json
+    try:
+        res = release_engine.reconciler.reconcile_environment(environment_id=environment_id)
+        return json.dumps(res, indent=2)
+    except Exception as e:
+        return json.dumps({"success": False, "error": str(e)}, indent=2)
+
+@tool
+def execute_safe_rollback(
+    environment_id: str,
+    failed_release_id: str,
+    restored_release_id: str,
+    reason: str,
+    approval_token: str = ""
+) -> str:
+    """Executes safe rollback with database migration compatibility checks and post-rollback verification."""
+    from release.service import release_engine
+    import json
+    try:
+        res = release_engine.execute_rollback(
+            environment_id=environment_id,
+            failed_release_id=failed_release_id,
+            restored_release_id=restored_release_id,
+            reason=reason,
+            approval_token=approval_token if approval_token else None,
+        )
+        return json.dumps(res, indent=2)
+    except Exception as e:
+        return json.dumps({"success": False, "error": str(e)}, indent=2)
+
 OMNIA_ALL_TOOLS = [
     unlock_all_devices,
     play_youtube_video,
@@ -3750,6 +3892,13 @@ OMNIA_ALL_TOOLS = [
     diagnose_operational_failure,
     plan_infrastructure_remediation,
     execute_and_verify_remediation,
+    create_software_release,
+    build_and_register_artifact,
+    qualify_software_release,
+    request_release_deployment,
+    execute_and_verify_deployment,
+    reconcile_environment_release,
+    execute_safe_rollback,
 ]
 
 # Backward compatibility alias

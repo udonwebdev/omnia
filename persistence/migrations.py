@@ -7,7 +7,7 @@ from typing import List, Tuple
 
 logger = logging.getLogger("Omnia.Persistence.Migrations")
 
-CURRENT_SCHEMA_VERSION = 18
+CURRENT_SCHEMA_VERSION = 19
 
 MIGRATION_V1 = """
 -- Schema Version 1: Durable Task Graph & Crash Recovery Tables
@@ -1790,6 +1790,114 @@ CREATE INDEX IF NOT EXISTS idx_inf_rem_target ON infrastructure_remediations(tar
 CREATE INDEX IF NOT EXISTS idx_inf_rem_status ON infrastructure_remediations(status);
 """
 
+
+
+MIGRATION_V19 = """
+-- Schema Version 19: Autonomous Deployment, Release Engineering & Rollback Engine
+
+CREATE TABLE IF NOT EXISTS releases (
+    release_id TEXT PRIMARY KEY,
+    app_id TEXT NOT NULL,
+    version TEXT NOT NULL,
+    source_revision TEXT NOT NULL,
+    state TEXT NOT NULL,
+    artifact_id TEXT,
+    target_environment TEXT NOT NULL,
+    created_by TEXT NOT NULL,
+    created_at REAL NOT NULL,
+    updated_at REAL NOT NULL,
+    description TEXT NOT NULL,
+    migration_safety TEXT NOT NULL,
+    approval_request_id TEXT,
+    approval_token TEXT,
+    qualification_results TEXT NOT NULL,
+    state_history TEXT NOT NULL,
+    active_deployment_id TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_releases_app ON releases(app_id);
+CREATE INDEX IF NOT EXISTS idx_releases_state ON releases(state);
+
+CREATE TABLE IF NOT EXISTS release_artifacts (
+    artifact_id TEXT PRIMARY KEY,
+    app_id TEXT NOT NULL,
+    version TEXT NOT NULL,
+    source_revision TEXT NOT NULL,
+    build_id TEXT NOT NULL,
+    digest_sha256 TEXT NOT NULL,
+    size_bytes INTEGER NOT NULL,
+    format_type TEXT NOT NULL,
+    storage_uri TEXT NOT NULL,
+    builder_identity TEXT NOT NULL,
+    toolchain_metadata TEXT NOT NULL,
+    dependency_manifest TEXT NOT NULL,
+    sbom_digest TEXT,
+    vulnerabilities_summary TEXT NOT NULL,
+    created_at REAL NOT NULL,
+    is_tamper_verified INTEGER NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_release_art_app ON release_artifacts(app_id, version);
+CREATE INDEX IF NOT EXISTS idx_release_art_digest ON release_artifacts(digest_sha256);
+
+CREATE TABLE IF NOT EXISTS release_environments (
+    environment_id TEXT PRIMARY KEY,
+    environment_type TEXT NOT NULL,
+    app_id TEXT NOT NULL,
+    provider_type TEXT NOT NULL,
+    current_release_id TEXT,
+    current_artifact_digest TEXT,
+    desired_release_id TEXT,
+    configuration_revision TEXT NOT NULL,
+    health_status TEXT NOT NULL,
+    requires_approval INTEGER NOT NULL,
+    in_maintenance INTEGER NOT NULL,
+    last_verified_at REAL,
+    target_endpoint TEXT NOT NULL,
+    cluster_lease_node TEXT,
+    lease_expires_at REAL
+);
+
+CREATE INDEX IF NOT EXISTS idx_rel_env_app ON release_environments(app_id);
+
+CREATE TABLE IF NOT EXISTS deployments (
+    deployment_id TEXT PRIMARY KEY,
+    release_id TEXT NOT NULL,
+    artifact_id TEXT NOT NULL,
+    environment_id TEXT NOT NULL,
+    strategy TEXT NOT NULL,
+    status TEXT NOT NULL,
+    current_traffic_pct REAL NOT NULL,
+    current_stage_index INTEGER NOT NULL,
+    stages TEXT NOT NULL,
+    verification_evidence TEXT,
+    error_message TEXT,
+    created_at REAL NOT NULL,
+    completed_at REAL,
+    executed_by TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_dep_release ON deployments(release_id);
+CREATE INDEX IF NOT EXISTS idx_dep_env ON deployments(environment_id);
+
+CREATE TABLE IF NOT EXISTS rollback_records (
+    rollback_id TEXT PRIMARY KEY,
+    failed_release_id TEXT NOT NULL,
+    restored_release_id TEXT NOT NULL,
+    environment_id TEXT NOT NULL,
+    reason TEXT NOT NULL,
+    migration_safety TEXT NOT NULL,
+    status TEXT NOT NULL,
+    approval_token TEXT,
+    verification_evidence TEXT,
+    created_at REAL NOT NULL,
+    completed_at REAL,
+    error_message TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_rb_env ON rollback_records(environment_id);
+"""
+
 def backup_database(db_path: str, backup_dir: str = "persistence_backups") -> str:
     """Creates a timestamped snapshot of the SQLite database prior to any schema modification."""
     if not os.path.exists(db_path):
@@ -2023,6 +2131,17 @@ def apply_migrations(db_path: str) -> int:
             conn.commit()
             logger.info("Migration v18 applied successfully.")
             current_version = 18
+
+        if current_version < 19:
+            logger.info("Applying Migration v19 (Autonomous Deployment, Release Engineering & Rollback Engine Tables)...")
+            cursor.executescript(MIGRATION_V19)
+            cursor.execute(
+                "INSERT INTO schema_migrations (version, applied_at, description) VALUES (?, ?, ?)",
+                (19, time.time(), "Autonomous Deployment, Release Engineering and Rollback Engine tables")
+            )
+            conn.commit()
+            logger.info("Migration v19 applied successfully.")
+            current_version = 19
 
         return current_version
     except Exception as e:
