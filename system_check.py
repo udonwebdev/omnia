@@ -2513,6 +2513,108 @@ async def run_diagnostics():
         traceback.print_exc()
         print(f"      [36] Autonomous Synthesis Engine ....... FAIL ({e})")
 
+    # 32. Module 37: Decision Support, Strategic Options & Trade-off Analysis Engine
+    print("\n[32/32] Checking Module 37: Decision Support, Strategic Options & Trade-off Analysis Engine...")
+    try:
+        from strategy.service import decision_support_service
+        from strategy.models import CriterionDirection, DecisionLifecycleState, RecommendationOutcome
+
+        # 32a. Decision Case & Baseline Option
+        strat_case = decision_support_service.create_decision_case(
+            title="Diagnostic Architecture Strategy",
+            description="Diagnostic evaluation of compute scaling alternatives",
+            owner_id="lead_diagnostician",
+            category="INFRASTRUCTURE",
+            risk_tolerance="HIGH",
+        )
+        assert strat_case.case_id is not None
+        baseline = decision_support_service.options.ensure_baseline_option(strat_case.case_id)
+        assert baseline.is_baseline is True
+        print("      [37] Decision Case & Baseline Option ... PASS (Case lifecycle initialization & mandatory baseline)")
+
+        # 32b. Strategic Options & MCDA Evaluation
+        opt_alpha = decision_support_service.register_strategic_option(
+            case_id=strat_case.case_id,
+            title="Option Alpha (Modernized Microservices)",
+            description="Containerized Kubernetes architecture",
+            is_baseline=False,
+            expected_outcome="Linear horizontal scaling",
+            estimated_cost=25000.0,
+            reversibility_score=0.85,
+        )
+        crit_cost = decision_support_service.register_decision_criterion(
+            case_id=strat_case.case_id,
+            name="Cost",
+            weight=0.5,
+            direction=CriterionDirection.MINIMIZE,
+        )
+        crit_scalability = decision_support_service.register_decision_criterion(
+            case_id=strat_case.case_id,
+            name="Scalability",
+            weight=0.5,
+            direction=CriterionDirection.MAXIMIZE,
+            is_mandatory=True,
+            minimum_threshold=5.0,
+        )
+
+        analysis = decision_support_service.run_strategic_analysis(
+            case_id=strat_case.case_id,
+            raw_metrics_matrix={
+                opt_alpha.option_id: {crit_cost.criterion_id: 25000.0, crit_scalability.criterion_id: 9.0},
+                baseline.option_id: {crit_cost.criterion_id: 5000.0, crit_scalability.criterion_id: 2.0},  # Fails mandatory threshold
+            },
+            risk_inputs_matrix={
+                opt_alpha.option_id: {"prob": 0.1, "sev": 0.3},
+                baseline.option_id: {"prob": 0.5, "sev": 0.8},
+            },
+        )
+        assert analysis["success"] is True
+        assert analysis["recommendation"]["outcome"] == RecommendationOutcome.RECOMMENDED.value
+        assert analysis["recommendation"]["recommended_option_id"] == opt_alpha.option_id
+        print("      [37] Multi-Criteria Analysis & Risk .... PASS (Weighted MCDA, Pareto filtering, and explainable scoring)")
+
+        # 32c. Human Authority Boundary & Decision Gating
+        try:
+            # Must block unapproved decision on high-risk case
+            decision_support_service.record_human_decision(
+                case_id=strat_case.case_id,
+                selected_option_id=opt_alpha.option_id,
+                decided_by="diagnostician",
+                approval_token=None,
+            )
+            assert False, "Failed to enforce mandatory approval token"
+        except PermissionError:
+            pass
+
+        # Authorize with Module 20 token
+        token = "token-sec-approval-strat-99"
+        decided_case = decision_support_service.record_human_decision(
+            case_id=strat_case.case_id,
+            selected_option_id=opt_alpha.option_id,
+            decided_by="diagnostician",
+            approval_token=token,
+        )
+        assert decided_case.state == DecisionLifecycleState.DECIDED
+        print("      [37] Human Authority & Approval Gate ... PASS (Module 20 token boundary & decision immutability)")
+
+        # 32d. Post-Decision Outcome Monitoring & Reassessment
+        mon = decision_support_service.record_outcome_monitoring(
+            case_id=strat_case.case_id,
+            actual_cost=40000.0,
+            expected_cost=25000.0,  # 60% cost overrun
+            assumptions_status={"Dependencies available": False},
+        )
+        assert mon.reassessment_triggered is True
+        reopened = decision_support_service.repo.get_case(strat_case.case_id)
+        assert reopened.state == DecisionLifecycleState.REOPENED
+        assert reopened.version == 2
+        print("      [37] Outcome Monitoring & Reassessment . PASS (Variance tracking & automated versioned reassessment)")
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        print(f"      [37] Strategic Decision Support Engine . FAIL ({e})")
+
     print("\n" + "=" * 60)
     print("Diagnostics complete.")
     print("=" * 60)

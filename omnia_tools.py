@@ -3495,6 +3495,565 @@ def resolve_security_incident(
 
 
 
+# --- Video Studio Module 22: Motion Tracking & Object Tracking Tools ---
+@tool
+def track_motion_target(
+    project_id: str,
+    clip_id: str,
+    asset_id: str,
+    file_path: str,
+    target_name: str,
+    initial_x: float,
+    initial_y: float,
+    initial_width: float = 64.0,
+    initial_height: float = 64.0,
+    method: str = "POINT_OPTICAL_FLOW",
+    target_clip_id: str = "",
+    apply_to_transform: bool = False
+) -> str:
+    """Performs video motion tracking across frames and optionally binds motion to clip transforms."""
+    from video_studio.tracking_service import tracking_service
+    from video_studio.tracking_models import TrackingMethodType, TrackApplicationTarget, TrackToEffectBinding
+    import json
+    try:
+        method_type = TrackingMethodType(method) if method in [m.value for m in TrackingMethodType] else TrackingMethodType.POINT_OPTICAL_FLOW
+        session = tracking_service.create_session(
+            project_id=project_id,
+            clip_id=clip_id,
+            asset_id=asset_id,
+            target_name=target_name,
+            initial_x=float(initial_x),
+            initial_y=float(initial_y),
+            initial_width=float(initial_width),
+            initial_height=float(initial_height),
+            method=method_type,
+        )
+        session = tracking_service.start_tracking(session.session_id, file_path)
+        result = {"session": session.to_dict()}
+
+        if apply_to_transform and target_clip_id:
+            binding = TrackToEffectBinding(
+                binding_id=f"bind_{session.session_id}",
+                session_id=session.session_id,
+                target_clip_id=target_clip_id,
+                application_target=TrackApplicationTarget.TRANSFORM_POSITION,
+            )
+            counts = tracking_service.apply_track_to_clip_transform(session.session_id, target_clip_id, binding=binding)
+            result["transform_applied"] = counts
+
+        return json.dumps({"success": True, "data": result}, indent=2)
+    except Exception as e:
+        return json.dumps({"success": False, "error": str(e)}, indent=2)
+
+# --- Video Studio Module 23: Green Screen & Chroma Keying Tools ---
+@tool
+def configure_chroma_key(
+    clip_id: str,
+    key_type: str = "GREEN_SCREEN",
+    color_space: str = "LAB",
+    key_color_r: int = 0,
+    key_color_g: int = 255,
+    key_color_b: int = 0,
+    tolerance: float = 40.0,
+    softness: float = 20.0,
+    feather_radius: int = 0,
+    choke: int = 0,
+    spill_suppression: bool = True,
+    display_mode: str = "FOREGROUND_KEYED"
+) -> str:
+    """Configures chroma key extraction parameters (green screen, blue screen, or custom color) on a clip."""
+    from video_studio.chroma_service import chroma_key_service
+    from video_studio.chroma_models import (
+        ChromaKeyConfig, ChromaKeyType, ChromaColorSpace, MatteDisplayMode, KeyColorSample
+    )
+    import json
+    try:
+        sample = KeyColorSample(r=int(key_color_r), g=int(key_color_g), b=int(key_color_b))
+        cfg = ChromaKeyConfig(
+            key_type=ChromaKeyType(key_type) if key_type in [t.value for t in ChromaKeyType] else ChromaKeyType.GREEN_SCREEN,
+            color_space=ChromaColorSpace(color_space) if color_space in [c.value for c in ChromaColorSpace] else ChromaColorSpace.LAB,
+            key_samples=[sample],
+            tolerance=float(tolerance),
+            softness=float(softness),
+            feather_radius=int(feather_radius),
+            choke=int(choke),
+            spill_suppression=bool(spill_suppression),
+            display_mode=MatteDisplayMode(display_mode) if display_mode in [m.value for m in MatteDisplayMode] else MatteDisplayMode.FOREGROUND_KEYED,
+        )
+        saved = chroma_key_service.update_config(clip_id, cfg)
+        return json.dumps({"success": True, "config": saved.to_dict()}, indent=2)
+    except Exception as e:
+        return json.dumps({"success": False, "error": str(e)}, indent=2)
+
+# --- Video Studio Module 25: Video Denoising & Image Restoration Tools ---
+@tool
+def configure_video_denoise(
+    clip_id: str,
+    method: str = "BILATERAL_SPATIAL",
+    quality_mode: str = "BALANCED",
+    channel_scope: str = "LUMA_AND_CHROMA",
+    strength: float = 15.0,
+    luma_strength: float = 15.0,
+    chroma_strength: float = 15.0,
+    spatial_radius: int = 5,
+    temporal_enabled: bool = False,
+    dead_pixel_correction: bool = False,
+    post_sharpening: float = 0.0
+) -> str:
+    """Configures edge-preserving spatial/temporal video denoising and restoration on a clip."""
+    from video_studio.denoise_service import video_denoise_service
+    from video_studio.denoise_models import (
+        DenoiseConfig, DenoiseMethod, DenoiseQualityMode, DenoiseChannelScope
+    )
+    import json
+    try:
+        cfg = DenoiseConfig(
+            method=DenoiseMethod(method) if method in [m.value for m in DenoiseMethod] else DenoiseMethod.BILATERAL_SPATIAL,
+            quality_mode=DenoiseQualityMode(quality_mode) if quality_mode in [q.value for q in DenoiseQualityMode] else DenoiseQualityMode.BALANCED,
+            channel_scope=DenoiseChannelScope(channel_scope) if channel_scope in [c.value for c in DenoiseChannelScope] else DenoiseChannelScope.LUMA_AND_CHROMA,
+            strength=float(strength),
+            luma_strength=float(luma_strength),
+            chroma_strength=float(chroma_strength),
+            spatial_radius=int(spatial_radius),
+            temporal_enabled=bool(temporal_enabled),
+            dead_pixel_correction=bool(dead_pixel_correction),
+            post_sharpening=float(post_sharpening),
+        )
+        saved = video_denoise_service.update_config(clip_id, cfg)
+        return json.dumps({"success": True, "config": saved.to_dict()}, indent=2)
+    except Exception as e:
+        return json.dumps({"success": False, "error": str(e)}, indent=2)
+
+# --- Video Studio Module 26: Video Upscaling & Super-Resolution Tools ---
+@tool
+def configure_video_upscale(
+    clip_id: str,
+    algorithm: str = "LANCZOS4",
+    sizing_policy: str = "SCALE_FACTOR",
+    scale_factor: float = 2.0,
+    target_width: int = 1920,
+    target_height: int = 1080,
+    detail_enhancement: bool = True,
+    sharpen_amount: float = 0.25,
+    pre_denoise: bool = False
+) -> str:
+    """Configures high-fidelity spatial upscaling, super-resolution, and detail enhancement on a clip."""
+    from video_studio.upscale_service import video_upscale_service
+    from video_studio.upscale_models import (
+        UpscaleConfig, UpscaleAlgorithm, SizingPolicy
+    )
+    import json
+    try:
+        cfg = UpscaleConfig(
+            algorithm=UpscaleAlgorithm(algorithm) if algorithm in [a.value for a in UpscaleAlgorithm] else UpscaleAlgorithm.LANCZOS4,
+            sizing_policy=SizingPolicy(sizing_policy) if sizing_policy in [s.value for s in SizingPolicy] else SizingPolicy.SCALE_FACTOR,
+            scale_factor=float(scale_factor),
+            target_width=int(target_width),
+            target_height=int(target_height),
+            detail_enhancement=bool(detail_enhancement),
+            sharpen_amount=float(sharpen_amount),
+            pre_denoise=bool(pre_denoise),
+        )
+        saved = video_upscale_service.update_config(clip_id, cfg)
+        return json.dumps({"success": True, "config": saved.to_dict()}, indent=2)
+    except Exception as e:
+        return json.dumps({"success": False, "error": str(e)}, indent=2)
+
+# --- Video Studio Module 27: Frame Interpolation & Frame-Rate Conversion Tools ---
+@tool
+def configure_frame_interpolation(
+    entity_id: str,
+    method: str = "MOTION_COMPENSATED",
+    source_fps: float = 24.0,
+    target_fps: float = 60.0,
+    detect_scene_cuts: bool = True,
+    scene_cut_threshold: float = 35.0
+) -> str:
+    """Configures motion-compensated or blended frame-rate conversion and slow-motion interpolation on an entity."""
+    from video_studio.interpolation_service import video_interpolation_service
+    from video_studio.interpolation_models import (
+        FrameRateConversionConfig, InterpolationMethod, RationalFrameRate
+    )
+    import json
+    try:
+        cfg = FrameRateConversionConfig(
+            method=InterpolationMethod(method) if method in [m.value for m in InterpolationMethod] else InterpolationMethod.MOTION_COMPENSATED,
+            source_rate=RationalFrameRate.from_float(source_fps),
+            target_rate=RationalFrameRate.from_float(target_fps),
+            detect_scene_cuts=bool(detect_scene_cuts),
+            scene_cut_threshold=float(scene_cut_threshold),
+        )
+        saved = video_interpolation_service.update_config(entity_id, cfg)
+        return json.dumps({"success": True, "config": saved.to_dict()}, indent=2)
+    except Exception as e:
+        return json.dumps({"success": False, "error": str(e)}, indent=2)
+
+# --- Video Studio Module 28: Video Deblurring & Motion Blur Processing Tools ---
+@tool
+def configure_video_deblur(
+    clip_id: str,
+    operation: str = "MOTION_BLUR_GENERATION",
+    blur_length: float = 7.0,
+    blur_angle_deg: float = 0.0,
+    shutter_mode: str = "SHUTTER_180",
+    regularization_k: float = 0.005
+) -> str:
+    """Configures Wiener deconvolution deblurring or camera shutter motion blur generation on a clip."""
+    from video_studio.deblur_service import video_deblur_service
+    from video_studio.deblur_models import (
+        DeblurConfig, BlurOperationType, ShutterAngleMode
+    )
+    import json
+    try:
+        cfg = DeblurConfig(
+            operation=BlurOperationType(operation) if operation in [o.value for o in BlurOperationType] else BlurOperationType.MOTION_BLUR_GENERATION,
+            blur_length=float(blur_length),
+            blur_angle_deg=float(blur_angle_deg),
+            shutter_mode=ShutterAngleMode(shutter_mode) if shutter_mode in [s.value for s in ShutterAngleMode] else ShutterAngleMode.SHUTTER_180,
+            regularization_k=float(regularization_k),
+        )
+        saved = video_deblur_service.update_config(clip_id, cfg)
+        return json.dumps({"success": True, "config": saved.to_dict()}, indent=2)
+    except Exception as e:
+        return json.dumps({"success": False, "error": str(e)}, indent=2)
+
+@tool
+def configure_video_lighting(
+    clip_id: str,
+    exposure_stops: float = 0.0,
+    contrast: float = 1.0,
+    highlights: float = 0.0,
+    shadows: float = 0.0,
+    whites: float = 0.0,
+    blacks: float = 0.0,
+    gamma: float = 1.0,
+    temperature: float = 0.0,
+    tint: float = 0.0,
+    preset: str = ""
+) -> str:
+    """Configures photographic exposure, tonal distribution, and lighting presets on a video clip."""
+    from video_studio.lighting_service import video_lighting_service
+    from video_studio.lighting_models import LightingEngineDocument, GlobalExposureTonalConfig
+    import json
+    try:
+        if preset:
+            saved = video_lighting_service.apply_preset(clip_id, preset)
+        else:
+            doc = video_lighting_service.get_or_create_document(clip_id)
+            doc.global_tone = GlobalExposureTonalConfig(
+                exposure_stops=float(exposure_stops),
+                contrast=float(contrast),
+                highlights=float(highlights),
+                shadows=float(shadows),
+                whites=float(whites),
+                blacks=float(blacks),
+                gamma=float(gamma),
+                temperature=float(temperature),
+                tint=float(tint),
+            )
+            saved = video_lighting_service.update_document(clip_id, doc)
+        return json.dumps({"success": True, "lighting": saved.to_dict()}, indent=2)
+    except Exception as e:
+        return json.dumps({"success": False, "error": str(e)}, indent=2)
+
+@tool
+def configure_lens_distortion(
+    clip_id: str,
+    k1: float = 0.0,
+    k2: float = 0.0,
+    strength: float = 1.0,
+    profile_id: str = "",
+    border_mode: str = "CLAMP_EDGE"
+) -> str:
+    """Configures geometric lens distortion correction or profile calibration on a clip."""
+    from video_studio.lens_service import video_lens_service
+    from video_studio.lens_models import LensCorrectionConfig, BorderHandlingMode
+    import json
+    try:
+        if profile_id:
+            cfg = video_lens_service.apply_profile_to_clip(clip_id, profile_id, strength=float(strength))
+        else:
+            cfg = video_lens_service.get_or_create_config(clip_id)
+            cfg.k1 = float(k1)
+            cfg.k2 = float(k2)
+            cfg.strength = float(strength)
+            if border_mode in [b.value for b in BorderHandlingMode]:
+                cfg.border_mode = BorderHandlingMode(border_mode)
+            cfg = video_lens_service.update_config(clip_id, cfg)
+        return json.dumps({"success": True, "config": cfg.to_dict()}, indent=2)
+    except Exception as e:
+        return json.dumps({"success": False, "error": str(e)}, indent=2)
+
+@tool
+def configure_film_grain(
+    clip_id: str,
+    intensity: float = 0.25,
+    scale: float = 1.0,
+    grain_type: str = "GAUSSIAN",
+    preset: str = "",
+    enable_halation: bool = False
+) -> str:
+    """Configures deterministic procedural film grain, analog texture, and presets on a clip."""
+    from video_studio.grain_service import video_grain_service
+    from video_studio.grain_models import FilmGrainConfig, GrainType, HalationMode
+    import json
+    try:
+        if preset:
+            cfg = video_grain_service.apply_preset_to_clip(clip_id, preset)
+        else:
+            cfg = video_grain_service.get_or_create_config(clip_id)
+            cfg.intensity = float(intensity)
+            cfg.scale = float(scale)
+            if grain_type in [g.value for g in GrainType]:
+                cfg.grain_type = GrainType(grain_type)
+            if enable_halation:
+                cfg.texture.halation_mode = HalationMode.RED_ORANGE
+            cfg = video_grain_service.update_config(clip_id, cfg)
+        return json.dumps({"success": True, "config": cfg.to_dict()}, indent=2)
+    except Exception as e:
+        return json.dumps({"success": False, "error": str(e)}, indent=2)
+
+@tool
+def configure_depth_compositing(
+    clip_id: str,
+    enable_parallax: bool = False,
+    parallax_shift_x: float = 0.0,
+    parallax_shift_y: float = 0.0,
+    enable_dof: bool = False,
+    dof_focus_distance: float = 0.4,
+    dof_max_blur: float = 15.0,
+    enable_depth_slice: bool = False,
+    slice_near: float = 0.2,
+    slice_far: float = 0.6,
+    preset: str = ""
+) -> str:
+    """Configures depth-aware compositing, 2.5D parallax, and optical DoF on a clip."""
+    from video_studio.depth_service import video_depth_service
+    from video_studio.depth_models import DepthEffectConfig
+    import json
+    try:
+        if preset:
+            cfg = video_depth_service.apply_preset(clip_id, preset)
+            if cfg is None:
+                return json.dumps({"success": False, "error": f"Unknown preset: {preset}"}, indent=2)
+        else:
+            cfg = video_depth_service.get_config(clip_id)
+            cfg.enable_parallax = bool(enable_parallax)
+            cfg.parallax_shift_x = float(parallax_shift_x)
+            cfg.parallax_shift_y = float(parallax_shift_y)
+            cfg.enable_dof = bool(enable_dof)
+            cfg.dof_focus_distance = float(dof_focus_distance)
+            cfg.dof_max_blur = float(dof_max_blur)
+            cfg.enable_depth_slice = bool(enable_depth_slice)
+            cfg.slice_near = float(slice_near)
+            cfg.slice_far = float(slice_far)
+            cfg = video_depth_service.set_config(clip_id, cfg)
+        return json.dumps({"success": True, "config": cfg.to_dict()}, indent=2)
+    except Exception as e:
+        return json.dumps({"success": False, "error": str(e)}, indent=2)
+
+@tool
+def analyze_optical_flow(
+    asset_id: str,
+    algorithm: str = "FARNEBACK_DENSE",
+    quality_preset: str = "BALANCED",
+    direction: str = "BIDIRECTIONAL"
+) -> str:
+    """Configures and inspects optical flow motion estimation for video footage."""
+    from video_studio.optical_flow_service import video_optical_flow_service
+    from video_studio.optical_flow_models import FlowAlgorithmType, FlowQualityPreset, FlowDirection, MotionAnalysisConfig
+    import json
+    try:
+        cfg = MotionAnalysisConfig(
+            algorithm=FlowAlgorithmType(algorithm),
+            quality_preset=FlowQualityPreset(quality_preset),
+            direction=FlowDirection(direction),
+        )
+        return json.dumps({
+            "success": True,
+            "asset_id": asset_id,
+            "config": cfg.to_dict(),
+            "status": "CONFIGURED"
+        }, indent=2)
+    except Exception as e:
+        return json.dumps({"success": False, "error": str(e)}, indent=2)
+
+@tool
+def configure_object_segmentation(
+    clip_id: str,
+    frame_index: int = 0,
+    workflow: str = "MODEL_BACKED",
+    refine_feather_radius: float = 0.0,
+    refine_threshold: float = 0.5,
+    invert_mask: bool = False
+) -> str:
+    """Configures subject isolation, semantic masking, and edge refinement on a clip frame."""
+    from video_studio.segmentation_service import video_segmentation_service
+    from video_studio.segmentation_models import MaskRefinementConfig, SegmentationWorkflowType
+    import json
+    try:
+        refine = MaskRefinementConfig(
+            feather_radius=float(refine_feather_radius),
+            threshold=float(refine_threshold),
+            invert_mask=bool(invert_mask)
+        )
+        container = video_segmentation_service.get_or_create_frame_container(clip_id, frame_index)
+        return json.dumps({
+            "success": True,
+            "clip_id": clip_id,
+            "frame_index": frame_index,
+            "mask_count": len(container.masks),
+            "refinement": refine.to_dict(),
+            "workflow": workflow
+        }, indent=2)
+    except Exception as e:
+        return json.dumps({"success": False, "error": str(e)}, indent=2)
+
+@tool
+def search_video_intelligence(
+    query_text: str,
+    asset_id: str = "",
+    project_id: str = "",
+    max_results: int = 15
+) -> str:
+    """Searches video content intelligence, shot descriptions, scene tags, and speech transcripts."""
+    from video_studio.intelligence_service import video_intelligence_service
+    from video_studio.intelligence_models import SemanticSearchQuery
+    import json
+    try:
+        query = SemanticSearchQuery(
+            query_text=query_text,
+            asset_id=asset_id if asset_id else None,
+            project_id=project_id if project_id else None,
+            max_results=int(max_results)
+        )
+        results = video_intelligence_service.search_media(query)
+        return json.dumps({
+            "success": True,
+            "query": query_text,
+            "result_count": len(results),
+            "matches": [r.to_dict() for r in results]
+        }, indent=2)
+    except Exception as e:
+        return json.dumps({"success": False, "error": str(e)}, indent=2)
+
+@tool
+def generate_rough_cut_assembly(
+    project_id: str,
+    source_asset_ids_json: str,
+    title: str = "Rough Cut Assembly",
+    target_duration_seconds: float = 60.0,
+    pacing: str = "MODERATE",
+    narrative_structure: str = "CHRONOLOGICAL",
+    required_keywords_json: str = "[]",
+    excluded_keywords_json: str = "[]",
+    auto_approve: bool = False,
+    sequence_id: str = "",
+) -> str:
+    """Synthesizes footage intelligence into an editable rough-cut EditDecisionList and optional timeline sequence."""
+    from video_studio.rough_cut_service import rough_cut_service
+    from video_studio.rough_cut_models import PacingProfile, NarrativeStructure
+    import json
+    try:
+        source_assets = json.loads(source_asset_ids_json) if isinstance(source_asset_ids_json, str) else list(source_asset_ids_json)
+        req_kws = json.loads(required_keywords_json) if isinstance(required_keywords_json, str) else list(required_keywords_json)
+        ex_kws = json.loads(excluded_keywords_json) if isinstance(excluded_keywords_json, str) else list(excluded_keywords_json)
+
+        p_enum = PacingProfile(pacing.upper()) if pacing.upper() in PacingProfile.__members__ else PacingProfile.MODERATE
+        n_enum = NarrativeStructure(narrative_structure.upper()) if narrative_structure.upper() in NarrativeStructure.__members__ else NarrativeStructure.CHRONOLOGICAL
+
+        brief = rough_cut_service.create_brief(
+            project_id=project_id,
+            title=title,
+            source_asset_ids=source_assets,
+            target_duration_seconds=float(target_duration_seconds),
+            pacing=p_enum,
+            narrative_structure=n_enum,
+            required_keywords=req_kws,
+            excluded_keywords=ex_kws,
+        )
+
+        edl = rough_cut_service.generate_rough_cut_edl(brief.brief_id)
+
+        result_payload: Dict[str, Any] = {
+            "success": True,
+            "brief": brief.to_dict(),
+            "edl": edl.to_dict(),
+        }
+
+        if auto_approve:
+            rough_cut_service.approve_edl(edl.edl_id)
+            res = rough_cut_service.commit_edl_to_timeline(edl.edl_id, sequence_id=sequence_id if sequence_id else None)
+            result_payload["timeline_result"] = res.to_dict()
+
+        return json.dumps(result_payload, indent=2)
+    except Exception as e:
+        return json.dumps({"success": False, "error": str(e)}, indent=2)
+
+@tool
+def inspect_media_quality_control(
+    file_path: str,
+    asset_id: str = "asset_inspect",
+    profile_id: str = "delivery_standard_web",
+    project_id: str = "default_project"
+) -> str:
+    """Performs deep technical QC validation on media files, inspecting container, resolution, black bursts, freeze frames, and audio clipping."""
+    from video_studio.qc_service import quality_control_service
+    import json
+    try:
+        report = quality_control_service.inspect_media_file(
+            file_path=file_path,
+            asset_id=asset_id,
+            project_id=project_id,
+            profile_id=profile_id,
+        )
+        return json.dumps({"success": True, "report": report.to_dict()}, indent=2)
+    except Exception as e:
+        return json.dumps({"success": False, "error": str(e)}, indent=2)
+
+@tool
+def create_portable_project_package(
+    project_id: str,
+    output_archive_path: str,
+    project_name: str = "Project",
+    package_type: str = "PORTABLE_PROJECT"
+) -> str:
+    """Collects and packages a Video Studio project, its media dependencies, sequences, and checksums into a portable verified archive."""
+    from video_studio.package_service import package_service
+    from video_studio.package_models import PackageType
+    import json
+    try:
+        ptype = PackageType(package_type.upper()) if package_type.upper() in PackageType.__members__ else PackageType.PORTABLE_PROJECT
+        manifest = package_service.create_project_package(
+            project_id=project_id,
+            output_archive_path=output_archive_path,
+            project_name=project_name,
+            package_type=ptype,
+        )
+        return json.dumps({"success": True, "manifest": manifest.to_dict()}, indent=2)
+    except Exception as e:
+        return json.dumps({"success": False, "error": str(e)}, indent=2)
+
+@tool
+def execute_workflow_automation(
+    workflow_id: str,
+    project_id: str = "default_project",
+    context_json: str = "{}"
+) -> str:
+    """Executes an automated DAG workflow across Video Studio services (probing, scene analysis, QC, packaging, and timeline commands)."""
+    from video_studio.workflow_service import workflow_service
+    import json
+    try:
+        ctx = json.loads(context_json) if isinstance(context_json, str) else dict(context_json)
+        run = workflow_service.trigger_workflow(
+            workflow_id=workflow_id,
+            project_id=project_id,
+            initial_context=ctx,
+        )
+        return json.dumps({"success": True, "run": run.to_dict()}, indent=2)
+    except Exception as e:
+        return json.dumps({"success": False, "error": str(e)}, indent=2)
+
 # --- Autonomous Observability, Diagnostics & Self-Healing Tools ---
 @tool
 def register_observable_component(
@@ -4117,7 +4676,217 @@ def evaluate_briefing_quality(
     except Exception as e:
         return json.dumps({"success": False, "error": str(e)}, indent=2)
 
+@tool
+def create_strategic_decision_case(
+    title: str,
+    description: str,
+    owner_id: str,
+    category: str = "INFRASTRUCTURE_ARCHITECTURE",
+    risk_tolerance: str = "MEDIUM"
+) -> str:
+    """Creates a versioned decision case for multi-criteria strategic evaluation."""
+    from strategy.service import decision_support_service
+    import json
+    try:
+        case = decision_support_service.create_decision_case(
+            title=title,
+            description=description,
+            owner_id=owner_id,
+            category=category,
+            risk_tolerance=risk_tolerance,
+        )
+        return json.dumps({"success": True, "case": case.to_dict()}, indent=2)
+    except Exception as e:
+        return json.dumps({"success": False, "error": str(e)}, indent=2)
+
+@tool
+def register_strategic_decision_option(
+    case_id: str,
+    title: str,
+    description: str,
+    is_baseline: bool,
+    expected_outcome: str,
+    estimated_cost: float,
+    implementation_complexity: str = "MEDIUM",
+    reversibility_score: float = 0.8
+) -> str:
+    """Registers a candidate strategic alternative or status-quo baseline for a decision case."""
+    from strategy.service import decision_support_service
+    import json
+    try:
+        opt = decision_support_service.register_strategic_option(
+            case_id=case_id,
+            title=title,
+            description=description,
+            is_baseline=is_baseline,
+            expected_outcome=expected_outcome,
+            estimated_cost=estimated_cost,
+            implementation_complexity=implementation_complexity,
+            reversibility_score=reversibility_score,
+        )
+        return json.dumps({"success": True, "option": opt.to_dict()}, indent=2)
+    except Exception as e:
+        return json.dumps({"success": False, "error": str(e)}, indent=2)
+
+@tool
+def register_strategic_decision_criterion(
+    case_id: str,
+    name: str,
+    weight: float,
+    direction: str = "MAXIMIZE",
+    is_mandatory: bool = False,
+    minimum_threshold: float = None
+) -> str:
+    """Adds a weighted decision criterion with mandatory thresholds to a decision case."""
+    from strategy.service import decision_support_service
+    from strategy.models import CriterionDirection
+    import json
+    try:
+        crit = decision_support_service.register_decision_criterion(
+            case_id=case_id,
+            name=name,
+            weight=weight,
+            direction=CriterionDirection(direction),
+            is_mandatory=is_mandatory,
+            minimum_threshold=minimum_threshold,
+        )
+        return json.dumps({"success": True, "criterion": crit.to_dict()}, indent=2)
+    except Exception as e:
+        return json.dumps({"success": False, "error": str(e)}, indent=2)
+
+@tool
+def execute_strategic_decision_analysis(
+    case_id: str,
+    metrics_matrix_json: str,
+    risk_matrix_json: str = "{}",
+    information_gaps_json: str = "[]",
+    has_active_contradictions: bool = False
+) -> str:
+    """Runs Multi-Criteria Decision Analysis, risk scoring, sensitivity tests, and synthesizes explainable recommendations."""
+    from strategy.service import decision_support_service
+    import json
+    try:
+        metrics = json.loads(metrics_matrix_json)
+        risks = json.loads(risk_matrix_json) if risk_matrix_json else {}
+        gaps = json.loads(information_gaps_json) if information_gaps_json else []
+        res = decision_support_service.run_strategic_analysis(
+            case_id=case_id,
+            raw_metrics_matrix=metrics,
+            risk_inputs_matrix=risks,
+            known_information_gaps=gaps,
+            has_active_contradictions=has_active_contradictions,
+        )
+        return json.dumps(res, indent=2)
+    except Exception as e:
+        return json.dumps({"success": False, "error": str(e)}, indent=2)
+
+@tool
+def record_authoritative_decision(
+    case_id: str,
+    selected_option_id: str,
+    decided_by: str,
+    approval_token: str = ""
+) -> str:
+    """Records the authoritative human decision while enforcing human approval boundaries for high-risk cases."""
+    from strategy.service import decision_support_service
+    import json
+    try:
+        case = decision_support_service.record_human_decision(
+            case_id=case_id,
+            selected_option_id=selected_option_id,
+            decided_by=decided_by,
+            approval_token=approval_token if approval_token else None,
+        )
+        return json.dumps({"success": True, "case": case.to_dict()}, indent=2)
+    except Exception as e:
+        return json.dumps({"success": False, "error": str(e)}, indent=2)
+
+@tool
+def monitor_decision_outcome(
+    case_id: str,
+    actual_cost: float = None,
+    expected_cost: float = None,
+    assumptions_status_json: str = "{}",
+    critical_drift_detected: bool = False
+) -> str:
+    """Monitors post-decision operational reality and triggers reassessments if assumptions or costs diverge >30%."""
+    from strategy.service import decision_support_service
+    import json
+    try:
+        assumptions = json.loads(assumptions_status_json) if assumptions_status_json else {}
+        mon = decision_support_service.record_outcome_monitoring(
+            case_id=case_id,
+            actual_cost=actual_cost,
+            expected_cost=expected_cost,
+            assumptions_status=assumptions,
+            critical_drift_detected=critical_drift_detected,
+        )
+        return json.dumps({"success": True, "monitoring": mon.to_dict()}, indent=2)
+    except Exception as e:
+        return json.dumps({"success": False, "error": str(e)}, indent=2)
+
+@tool
+def submit_video_review_comment(
+    session_id: str,
+    author_id: str,
+    content: str,
+    timestamp_seconds: float = 0.0,
+    end_timestamp_seconds: float = None,
+    region_json: str = None,
+    parent_comment_id: str = None,
+) -> str:
+    """Submits a timestamped or spatial annotation comment to a video review session."""
+    from video_studio.collaboration_service import CollaborationService
+    from video_studio.collaboration_models import NormalizedRegion
+    from video_studio.registry import video_studio_capability_registry
+    import json
+    try:
+        svc = CollaborationService(video_studio_capability_registry)
+        reg = None
+        if region_json:
+            reg_dict = json.loads(region_json) if isinstance(region_json, str) else region_json
+            reg = NormalizedRegion.from_dict(reg_dict)
+        comment = svc.add_comment(
+            session_id=session_id,
+            author_id=author_id,
+            content=content,
+            timestamp_seconds=float(timestamp_seconds),
+            end_timestamp_seconds=float(end_timestamp_seconds) if end_timestamp_seconds is not None else None,
+            region=reg,
+            parent_comment_id=parent_comment_id,
+        )
+        return json.dumps({"success": True, "comment": comment.to_dict()}, indent=2)
+    except Exception as e:
+        return json.dumps({"success": False, "error": str(e)}, indent=2)
+
+@tool
+def create_timeline_revision_snapshot(
+    project_id: str,
+    sequence_id: str,
+    name: str = "Milestone",
+    message: str = "",
+    author_id: str = "editor",
+    is_protected: bool = False,
+) -> str:
+    """Captures an immutable, content-addressed revision snapshot of an active timeline sequence."""
+    from video_studio.versioning_service import version_control_service
+    import json
+    try:
+        snap = version_control_service.create_snapshot(
+            project_id=project_id,
+            sequence_id=sequence_id,
+            name=name,
+            message=message,
+            author_id=author_id,
+            is_protected=is_protected,
+        )
+        return json.dumps({"success": True, "snapshot": snap.to_dict()}, indent=2)
+    except Exception as e:
+        return json.dumps({"success": False, "error": str(e)}, indent=2)
+
 OMNIA_ALL_TOOLS = [
+    create_timeline_revision_snapshot,
+    submit_video_review_comment,
     unlock_all_devices,
     play_youtube_video,
     broadcast_url_to_mesh,
@@ -4304,6 +5073,23 @@ OMNIA_ALL_TOOLS = [
     resolve_security_incident,
     generate_media_proxy,
     relink_missing_media,
+    track_motion_target,
+    configure_chroma_key,
+    configure_video_denoise,
+    configure_video_upscale,
+    configure_frame_interpolation,
+    configure_video_deblur,
+    configure_video_lighting,
+    configure_lens_distortion,
+    configure_film_grain,
+    configure_depth_compositing,
+    analyze_optical_flow,
+    configure_object_segmentation,
+    search_video_intelligence,
+    generate_rough_cut_assembly,
+    inspect_media_quality_control,
+    create_portable_project_package,
+    execute_workflow_automation,
     register_observable_component,
     record_operational_telemetry,
     run_component_health_check,
@@ -4332,6 +5118,12 @@ OMNIA_ALL_TOOLS = [
     synthesize_intelligence_briefing,
     deliver_intelligence_briefing,
     evaluate_briefing_quality,
+    create_strategic_decision_case,
+    register_strategic_decision_option,
+    register_strategic_decision_criterion,
+    execute_strategic_decision_analysis,
+    record_authoritative_decision,
+    monitor_decision_outcome,
 ]
 
 # Backward compatibility alias

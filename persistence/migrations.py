@@ -7,7 +7,7 @@ from typing import List, Tuple
 
 logger = logging.getLogger("Omnia.Persistence.Migrations")
 
-CURRENT_SCHEMA_VERSION = 21
+CURRENT_SCHEMA_VERSION = 22
 
 MIGRATION_V1 = """
 -- Schema Version 1: Durable Task Graph & Crash Recovery Tables
@@ -2138,6 +2138,142 @@ CREATE TABLE IF NOT EXISTS intelligence_deliveries (
 CREATE INDEX IF NOT EXISTS idx_ideliv_bver ON intelligence_deliveries(briefing_version_id);
 """
 
+MIGRATION_V22 = """
+-- Schema Version 22: Decision Support, Strategic Options & Trade-off Analysis Engine
+
+CREATE TABLE IF NOT EXISTS strategy_cases (
+    case_id TEXT PRIMARY KEY,
+    title TEXT NOT NULL,
+    description TEXT NOT NULL,
+    owner_id TEXT NOT NULL,
+    category TEXT NOT NULL,
+    deadline_ts REAL,
+    context_json TEXT NOT NULL,
+    desired_outcomes_json TEXT NOT NULL,
+    constraints_json TEXT NOT NULL,
+    available_resources_json TEXT NOT NULL,
+    stakeholders_json TEXT NOT NULL,
+    risk_tolerance TEXT NOT NULL,
+    version INTEGER DEFAULT 1,
+    state TEXT NOT NULL,
+    selected_option_id TEXT,
+    decided_by TEXT,
+    approval_token TEXT,
+    review_date_ts REAL,
+    created_at REAL NOT NULL,
+    updated_at REAL NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_strat_case_owner ON strategy_cases(owner_id);
+CREATE INDEX IF NOT EXISTS idx_strat_case_state ON strategy_cases(state);
+
+CREATE TABLE IF NOT EXISTS strategy_options (
+    option_id TEXT PRIMARY KEY,
+    case_id TEXT NOT NULL,
+    title TEXT NOT NULL,
+    description TEXT NOT NULL,
+    is_baseline INTEGER NOT NULL,
+    expected_outcome TEXT NOT NULL,
+    estimated_cost REAL NOT NULL,
+    implementation_complexity TEXT NOT NULL,
+    reversibility_score REAL NOT NULL,
+    time_horizon_days INTEGER NOT NULL,
+    dependencies_json TEXT NOT NULL,
+    benefits_json TEXT NOT NULL,
+    disadvantages_json TEXT NOT NULL,
+    critical_assumptions_json TEXT NOT NULL,
+    known_limitations_json TEXT NOT NULL,
+    origin TEXT NOT NULL,
+    created_at REAL NOT NULL,
+    FOREIGN KEY (case_id) REFERENCES strategy_cases(case_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_strat_opt_case ON strategy_options(case_id);
+
+CREATE TABLE IF NOT EXISTS strategy_criteria (
+    criterion_id TEXT PRIMARY KEY,
+    case_id TEXT NOT NULL,
+    name TEXT NOT NULL,
+    weight REAL NOT NULL,
+    direction TEXT NOT NULL,
+    is_mandatory INTEGER NOT NULL DEFAULT 0,
+    minimum_threshold REAL,
+    acceptable_range_json TEXT,
+    description TEXT,
+    FOREIGN KEY (case_id) REFERENCES strategy_cases(case_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_strat_crit_case ON strategy_criteria(case_id);
+
+CREATE TABLE IF NOT EXISTS strategy_assessments (
+    assessment_id TEXT PRIMARY KEY,
+    case_id TEXT NOT NULL,
+    option_id TEXT NOT NULL,
+    criterion_scores_json TEXT NOT NULL,
+    normalized_score REAL NOT NULL,
+    is_pareto_dominated INTEGER NOT NULL DEFAULT 0,
+    violates_mandatory_constraint INTEGER NOT NULL DEFAULT 0,
+    constraint_violations_json TEXT NOT NULL,
+    FOREIGN KEY (case_id) REFERENCES strategy_cases(case_id),
+    FOREIGN KEY (option_id) REFERENCES strategy_options(option_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_strat_ass_case ON strategy_assessments(case_id);
+
+CREATE TABLE IF NOT EXISTS strategy_risk_assessments (
+    assessment_id TEXT PRIMARY KEY,
+    case_id TEXT NOT NULL,
+    option_id TEXT NOT NULL,
+    probability_of_failure REAL NOT NULL,
+    severity_of_failure REAL NOT NULL,
+    financial_exposure REAL NOT NULL,
+    operational_disruption TEXT NOT NULL,
+    security_risk TEXT NOT NULL,
+    opportunity_cost_notes TEXT NOT NULL,
+    mitigation_strategy TEXT NOT NULL,
+    residual_risk_score REAL NOT NULL,
+    is_acceptable INTEGER NOT NULL DEFAULT 1,
+    FOREIGN KEY (case_id) REFERENCES strategy_cases(case_id),
+    FOREIGN KEY (option_id) REFERENCES strategy_options(option_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_strat_risk_case ON strategy_risk_assessments(case_id);
+
+CREATE TABLE IF NOT EXISTS strategy_recommendations (
+    recommendation_id TEXT PRIMARY KEY,
+    case_id TEXT NOT NULL,
+    outcome TEXT NOT NULL,
+    recommended_option_id TEXT,
+    primary_justification TEXT NOT NULL,
+    key_tradeoffs_json TEXT NOT NULL,
+    major_risks_json TEXT NOT NULL,
+    critical_assumptions_json TEXT NOT NULL,
+    conditions_for_invalidation_json TEXT NOT NULL,
+    confidence_level TEXT NOT NULL,
+    suggested_review_date_ts REAL NOT NULL,
+    created_at REAL NOT NULL,
+    FOREIGN KEY (case_id) REFERENCES strategy_cases(case_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_strat_rec_case ON strategy_recommendations(case_id);
+
+CREATE TABLE IF NOT EXISTS strategy_outcomes (
+    monitoring_id TEXT PRIMARY KEY,
+    case_id TEXT NOT NULL,
+    selected_option_id TEXT NOT NULL,
+    actual_cost REAL,
+    expected_vs_actual_variance_pct REAL NOT NULL DEFAULT 0.0,
+    assumptions_still_valid INTEGER NOT NULL DEFAULT 1,
+    invalidated_assumptions_json TEXT NOT NULL,
+    reassessment_triggered INTEGER NOT NULL DEFAULT 0,
+    reassessment_reason TEXT,
+    observed_at REAL NOT NULL,
+    FOREIGN KEY (case_id) REFERENCES strategy_cases(case_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_strat_out_case ON strategy_outcomes(case_id);
+"""
+
 def backup_database(db_path: str, backup_dir: str = "persistence_backups") -> str:
     """Creates a timestamped snapshot of the SQLite database prior to any schema modification."""
     if not os.path.exists(db_path):
@@ -2404,6 +2540,17 @@ def apply_migrations(db_path: str) -> int:
             conn.commit()
             logger.info("Migration v21 applied successfully.")
             current_version = 21
+
+        if current_version < 22:
+            logger.info("Applying Migration v22 (Decision Support, Strategic Options & Trade-off Analysis Tables)...")
+            cursor.executescript(MIGRATION_V22)
+            cursor.execute(
+                "INSERT INTO schema_migrations (version, applied_at, description) VALUES (?, ?, ?)",
+                (22, time.time(), "Decision Support, Strategic Options and Trade-off Analysis Engine tables")
+            )
+            conn.commit()
+            logger.info("Migration v22 applied successfully.")
+            current_version = 22
 
         return current_version
     except Exception as e:
