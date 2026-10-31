@@ -7,7 +7,7 @@ from typing import List, Tuple
 
 logger = logging.getLogger("Omnia.Persistence.Migrations")
 
-CURRENT_SCHEMA_VERSION = 19
+CURRENT_SCHEMA_VERSION = 20
 
 MIGRATION_V1 = """
 -- Schema Version 1: Durable Task Graph & Crash Recovery Tables
@@ -1898,6 +1898,135 @@ CREATE TABLE IF NOT EXISTS rollback_records (
 CREATE INDEX IF NOT EXISTS idx_rb_env ON rollback_records(environment_id);
 """
 
+
+
+MIGRATION_V20 = """
+-- Schema Version 20: Autonomous Research, Scientific Discovery & Hypothesis Testing Engine
+
+CREATE TABLE IF NOT EXISTS research_requests (
+    research_id TEXT PRIMARY KEY,
+    original_question TEXT NOT NULL,
+    normalized_objective TEXT NOT NULL,
+    domain TEXT NOT NULL,
+    scope TEXT NOT NULL,
+    state TEXT NOT NULL,
+    risk_level TEXT NOT NULL,
+    requires_approval INTEGER NOT NULL,
+    created_by TEXT NOT NULL,
+    created_at REAL NOT NULL,
+    updated_at REAL NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_research_req_state ON research_requests(state);
+
+CREATE TABLE IF NOT EXISTS research_knowledge_gaps (
+    gap_id TEXT PRIMARY KEY,
+    research_id TEXT NOT NULL,
+    description TEXT NOT NULL,
+    why_it_matters TEXT NOT NULL,
+    evidence_required TEXT NOT NULL,
+    possible_acquisition_method TEXT NOT NULL,
+    priority TEXT NOT NULL,
+    resolution_status TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_rkg_research ON research_knowledge_gaps(research_id);
+
+CREATE TABLE IF NOT EXISTS research_hypotheses (
+    hypothesis_id TEXT PRIMARY KEY,
+    research_id TEXT NOT NULL,
+    statement TEXT NOT NULL,
+    hypothesis_type TEXT NOT NULL,
+    scope TEXT NOT NULL,
+    assumptions TEXT NOT NULL,
+    supporting_evidence TEXT NOT NULL,
+    contradictory_evidence TEXT NOT NULL,
+    expected_observations TEXT NOT NULL,
+    falsification_conditions TEXT NOT NULL,
+    state TEXT NOT NULL,
+    confidence_score REAL NOT NULL,
+    created_at REAL NOT NULL,
+    updated_at REAL NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_rh_research ON research_hypotheses(research_id);
+CREATE INDEX IF NOT EXISTS idx_rh_state ON research_hypotheses(state);
+
+CREATE TABLE IF NOT EXISTS research_experiments (
+    experiment_id TEXT PRIMARY KEY,
+    research_id TEXT NOT NULL,
+    hypothesis_id TEXT NOT NULL,
+    title TEXT NOT NULL,
+    objective TEXT NOT NULL,
+    experiment_type TEXT NOT NULL,
+    independent_variables TEXT NOT NULL,
+    dependent_variables TEXT NOT NULL,
+    controlled_variables TEXT NOT NULL,
+    sampling_strategy TEXT NOT NULL,
+    sample_size INTEGER NOT NULL,
+    baseline_condition TEXT NOT NULL,
+    treatment_condition TEXT NOT NULL,
+    measurement_protocol TEXT NOT NULL,
+    stopping_conditions TEXT NOT NULL,
+    success_criteria TEXT NOT NULL,
+    failure_criteria TEXT NOT NULL,
+    requires_approval INTEGER NOT NULL,
+    approval_token TEXT,
+    isolation_environment TEXT NOT NULL,
+    status TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_re_research ON research_experiments(research_id);
+CREATE INDEX IF NOT EXISTS idx_re_hypothesis ON research_experiments(hypothesis_id);
+
+CREATE TABLE IF NOT EXISTS research_hypothesis_tests (
+    test_id TEXT PRIMARY KEY,
+    hypothesis_id TEXT NOT NULL,
+    method TEXT NOT NULL,
+    sample_size INTEGER NOT NULL,
+    test_statistic REAL,
+    p_value REAL,
+    effect_size REAL NOT NULL,
+    confidence_interval TEXT,
+    evaluated_state TEXT NOT NULL,
+    reasoning TEXT NOT NULL,
+    limitations TEXT NOT NULL,
+    tested_at REAL NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_rht_hypothesis ON research_hypothesis_tests(hypothesis_id);
+
+CREATE TABLE IF NOT EXISTS research_conclusions (
+    conclusion_id TEXT PRIMARY KEY,
+    research_id TEXT NOT NULL,
+    state TEXT NOT NULL,
+    summary TEXT NOT NULL,
+    direct_observations TEXT NOT NULL,
+    supported_claims TEXT NOT NULL,
+    rejected_hypotheses TEXT NOT NULL,
+    unresolved_uncertainties TEXT NOT NULL,
+    scope_limitations TEXT NOT NULL,
+    evidence_trail TEXT NOT NULL,
+    concluded_at REAL NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_rc_research ON research_conclusions(research_id);
+
+CREATE TABLE IF NOT EXISTS research_reproducibility (
+    manifest_id TEXT PRIMARY KEY,
+    research_id TEXT NOT NULL,
+    dataset_digest_sha256 TEXT NOT NULL,
+    methodology_version TEXT NOT NULL,
+    code_digest_sha256 TEXT NOT NULL,
+    random_seed INTEGER,
+    environment_metadata TEXT NOT NULL,
+    replay_instructions TEXT NOT NULL,
+    created_at REAL NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_rr_research ON research_reproducibility(research_id);
+"""
+
 def backup_database(db_path: str, backup_dir: str = "persistence_backups") -> str:
     """Creates a timestamped snapshot of the SQLite database prior to any schema modification."""
     if not os.path.exists(db_path):
@@ -2142,6 +2271,17 @@ def apply_migrations(db_path: str) -> int:
             conn.commit()
             logger.info("Migration v19 applied successfully.")
             current_version = 19
+
+        if current_version < 20:
+            logger.info("Applying Migration v20 (Autonomous Research, Scientific Discovery & Hypothesis Testing Tables)...")
+            cursor.executescript(MIGRATION_V20)
+            cursor.execute(
+                "INSERT INTO schema_migrations (version, applied_at, description) VALUES (?, ?, ?)",
+                (20, time.time(), "Autonomous Research, Scientific Discovery and Hypothesis Testing Engine tables")
+            )
+            conn.commit()
+            logger.info("Migration v20 applied successfully.")
+            current_version = 20
 
         return current_version
     except Exception as e:

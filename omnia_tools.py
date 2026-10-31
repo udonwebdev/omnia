@@ -2096,6 +2096,30 @@ def relink_missing_media(
         return json.dumps({"success": False, "error": str(e)}, indent=2)
 
 @tool
+def transcode_and_conform_media(
+    project_id: str,
+    asset_id: str,
+    profile_id: str = "profile_master_1080p",
+    registration_policy: str = "NEW_ASSET"
+) -> str:
+    """Executes a media transcode and conform operation against an established profile."""
+    from video_studio.transcode_service import transcode_service
+    from video_studio.media_library import media_library_registry
+    from video_studio.transcode_models import DerivativeRegistrationPolicy
+    import json
+    try:
+        pml = media_library_registry.get_or_create(project_id)
+        asset = pml.get_asset(asset_id)
+        if not asset:
+            return json.dumps({"success": False, "error": f"Asset '{asset_id}' not found."}, indent=2)
+        policy = DerivativeRegistrationPolicy(registration_policy)
+        job = transcode_service.create_transcode_job(asset, profile_id=profile_id, registration_policy=policy)
+        ok = transcode_service.execute_job(job.job_id)
+        return json.dumps({"success": ok, "job": job.to_dict()}, indent=2)
+    except Exception as e:
+        return json.dumps({"success": False, "error": str(e)}, indent=2)
+
+@tool
 def list_graphics_templates() -> str:
     """Lists available built-in motion graphics and title templates."""
     from video_studio.motion_graphics_service import motion_graphics_service
@@ -3698,6 +3722,178 @@ def execute_safe_rollback(
     except Exception as e:
         return json.dumps({"success": False, "error": str(e)}, indent=2)
 
+
+# --- Autonomous Research, Scientific Discovery & Hypothesis Testing Tools ---
+@tool
+def create_research_investigation(
+    question: str,
+    domain: str = "SYSTEMS_PERFORMANCE",
+    scope: str = "INTERNAL_SERVICES",
+    risk_level: str = "LOW",
+    requires_approval: bool = False
+) -> str:
+    """Initializes a structured scientific research investigation from a question."""
+    from research.service import research_service
+    import json
+    try:
+        req = research_service.create_investigation(
+            question=question,
+            domain=domain,
+            scope=scope,
+            risk_level=risk_level,
+            requires_approval=requires_approval,
+        )
+        return json.dumps({"success": True, "research_request": req.to_dict()}, indent=2)
+    except Exception as e:
+        return json.dumps({"success": False, "error": str(e)}, indent=2)
+
+@tool
+def analyze_research_knowledge_gaps(
+    research_id: str,
+    known_evidence_json: str = "[]",
+    required_signals_json: str = "[]"
+) -> str:
+    """Identifies missing empirical observations and evidence gaps without hallucinating data."""
+    from research.service import research_service
+    import json
+    try:
+        known = json.loads(known_evidence_json) if known_evidence_json else []
+        required = json.loads(required_signals_json) if required_signals_json else []
+        gaps = research_service.identify_knowledge_gaps(
+            research_id=research_id,
+            known_evidence=known,
+            required_signals=required,
+        )
+        return json.dumps({"success": True, "research_id": research_id, "knowledge_gaps": gaps}, indent=2)
+    except Exception as e:
+        return json.dumps({"success": False, "error": str(e)}, indent=2)
+
+@tool
+def register_research_hypothesis(
+    research_id: str,
+    statement: str,
+    hypothesis_type: str = "ALTERNATIVE",
+    scope: str = "GLOBAL",
+    assumptions_json: str = "[]",
+    expected_observations_json: str = "[]",
+    falsification_conditions_json: str = "[]"
+) -> str:
+    """Registers a testable, falsifiable competing hypothesis."""
+    from research.service import research_service
+    from research.models import HypothesisType
+    import json
+    try:
+        ht = HypothesisType(hypothesis_type.upper()) if hypothesis_type.upper() in [h.value for h in HypothesisType] else HypothesisType.ALTERNATIVE
+        assumptions = json.loads(assumptions_json) if assumptions_json else []
+        expected = json.loads(expected_observations_json) if expected_observations_json else []
+        falsification = json.loads(falsification_conditions_json) if falsification_conditions_json else []
+        hypo = research_service.register_hypothesis(
+            research_id=research_id,
+            statement=statement,
+            hypothesis_type=ht,
+            scope=scope,
+            assumptions=assumptions,
+            expected_observations=expected,
+            falsification_conditions=falsification,
+        )
+        return json.dumps({"success": True, "hypothesis": hypo.to_dict()}, indent=2)
+    except Exception as e:
+        return json.dumps({"success": False, "error": str(e)}, indent=2)
+
+@tool
+def design_research_experiment(
+    research_id: str,
+    hypothesis_id: str,
+    title: str,
+    objective: str,
+    experiment_type: str = "BENCHMARK",
+    independent_vars_json: str = "[]",
+    dependent_vars_json: str = "[]",
+    controlled_vars_json: str = "[]",
+    baseline_condition: str = "CONTROL",
+    treatment_condition: str = "TREATMENT",
+    sample_size: int = 30,
+    requires_approval: bool = False,
+    isolation_environment: str = "SIMULATION"
+) -> str:
+    """Designs a controlled experiment with independent/dependent variables, controls, and stopping criteria."""
+    from research.service import research_service
+    from research.models import ExperimentType
+    import json
+    try:
+        et = ExperimentType(experiment_type.upper()) if experiment_type.upper() in [e.value for e in ExperimentType] else ExperimentType.BENCHMARK
+        ind_vars = json.loads(independent_vars_json) if independent_vars_json else ["intervention"]
+        dep_vars = json.loads(dependent_vars_json) if dependent_vars_json else ["latency_ms"]
+        ctrl_vars = json.loads(controlled_vars_json) if controlled_vars_json else ["concurrency"]
+        exp = research_service.design_experiment(
+            research_id=research_id,
+            hypothesis_id=hypothesis_id,
+            title=title,
+            objective=objective,
+            experiment_type=et,
+            independent_variables=ind_vars,
+            dependent_variables=dep_vars,
+            controlled_variables=ctrl_vars,
+            baseline_condition=baseline_condition,
+            treatment_condition=treatment_condition,
+            sample_size=int(sample_size),
+            requires_approval=requires_approval,
+            isolation_environment=isolation_environment,
+        )
+        return json.dumps({"success": True, "experiment": exp.to_dict()}, indent=2)
+    except Exception as e:
+        return json.dumps({"success": False, "error": str(e)}, indent=2)
+
+@tool
+def execute_research_experiment(
+    experiment_id: str,
+    approval_token: str = ""
+) -> str:
+    """Executes empirical trials and benchmarks while enforcing human approval boundaries for live interventions."""
+    from research.service import research_service
+    import json
+    try:
+        if approval_token:
+            research_service.authorize_experiment(experiment_id, approval_token)
+        res = research_service.execute_experiment(experiment_id=experiment_id)
+        return json.dumps(res, indent=2)
+    except Exception as e:
+        return json.dumps({"success": False, "error": str(e)}, indent=2)
+
+@tool
+def test_research_hypotheses(
+    research_id: str,
+    evaluations_json: str,
+    observations_json: str = "[]"
+) -> str:
+    """Evaluates empirical measurements against competing hypotheses and synthesizes a verifiable conclusion."""
+    from research.service import research_service
+    import json
+    try:
+        evaluations = json.loads(evaluations_json)
+        obs = json.loads(observations_json) if observations_json else []
+        res = research_service.evaluate_hypotheses_and_conclude(
+            research_id=research_id,
+            test_evaluations=evaluations,
+            direct_observations=obs,
+        )
+        return json.dumps(res, indent=2)
+    except Exception as e:
+        return json.dumps({"success": False, "error": str(e)}, indent=2)
+
+@tool
+def generate_reproducible_research_report(
+    research_id: str
+) -> str:
+    """Produces a structured scientific research report with verified citations and cryptographic manifest."""
+    from research.service import research_service
+    import json
+    try:
+        report = research_service.generate_report(research_id=research_id)
+        return report
+    except Exception as e:
+        return f"Error generating research report: {e}"
+
 OMNIA_ALL_TOOLS = [
     unlock_all_devices,
     play_youtube_video,
@@ -3899,6 +4095,13 @@ OMNIA_ALL_TOOLS = [
     execute_and_verify_deployment,
     reconcile_environment_release,
     execute_safe_rollback,
+    create_research_investigation,
+    analyze_research_knowledge_gaps,
+    register_research_hypothesis,
+    design_research_experiment,
+    execute_research_experiment,
+    test_research_hypotheses,
+    generate_reproducible_research_report,
 ]
 
 # Backward compatibility alias

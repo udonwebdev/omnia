@@ -2336,6 +2336,111 @@ async def run_diagnostics():
         traceback.print_exc()
         print(f"      [37] Autonomous Deployment & Release ... FAIL ({e})")
 
+    # 30. Module 35: Autonomous Research, Scientific Discovery & Hypothesis Testing Engine
+    print("\n[30/30] Checking Module 35: Autonomous Research, Scientific Discovery & Hypothesis Testing Engine...")
+    try:
+        from research.service import research_service
+        from research.models import HypothesisType, ExperimentType, HypothesisState, ConclusionState
+
+        # 30a. Investigative Request & Gap Analysis
+        res_req = research_service.create_investigation(
+            question="Diagnostic Evaluation: Does query caching reduce p99 latency in Omnia?",
+            domain="DATABASE_PERFORMANCE",
+            scope="STORAGE_ENGINE",
+            risk_level="LOW",
+            requires_approval=False,
+        )
+        assert res_req.research_id is not None
+        gaps = research_service.identify_knowledge_gaps(
+            research_id=res_req.research_id,
+            known_evidence=["Query cache improves read-heavy hit rates"],
+            required_signals=["P99 response time", "Lock acquisition wait duration"],
+        )
+        assert len(gaps) >= 1
+        print("      [35] Investigation & Knowledge Gaps .... PASS (Question planning & gap identification)")
+
+        # 30b. Competing Hypotheses & Falsifiability
+        h1 = research_service.register_hypothesis(
+            research_id=res_req.research_id,
+            statement="Query caching reduces P99 latency by over 30%",
+            hypothesis_type=HypothesisType.ALTERNATIVE,
+            scope="STORAGE_ENGINE",
+            falsification_conditions=["Observed latency reduction < 10%"],
+        )
+        h0 = research_service.register_hypothesis(
+            research_id=res_req.research_id,
+            statement="Query caching has no significant impact on P99 latency",
+            hypothesis_type=HypothesisType.NULL,
+            scope="STORAGE_ENGINE",
+            falsification_conditions=["Observed latency difference p < 0.05 and > 20% improvement"],
+        )
+        assert h1.hypothesis_id is not None
+        assert h0.hypothesis_id is not None
+        print("      [35] Competing Hypotheses & Falsifiability PASS (H1 alternative vs H0 null hypothesis)")
+
+        # 30c. Experiment Design & Approval Boundary
+        exp_live = research_service.design_experiment(
+            research_id=res_req.research_id,
+            hypothesis_id=h1.hypothesis_id,
+            title="Live DB Benchmark",
+            objective="Evaluate p99 impact",
+            experiment_type=ExperimentType.BENCHMARK,
+            independent_variables=["query_caching"],
+            dependent_variables=["p99_latency_ms"],
+            controlled_variables=["payload_size"],
+            baseline_condition="query_caching=False",
+            treatment_condition="query_caching=True",
+            requires_approval=True,
+            isolation_environment="LIVE_CLUSTER",
+        )
+        blocked_run = research_service.execute_experiment(exp_live.experiment_id)
+        assert blocked_run.get("success") is False
+        assert blocked_run.get("requires_approval") is True
+
+        # Grant approval token
+        auth_ok = research_service.authorize_experiment(exp_live.experiment_id, "token-sec-approval-999")
+        assert auth_ok is True
+        print("      [35] Experiment Design & Approval Gate . PASS (Controlled variables & Module 20 authorization boundary)")
+
+        # 30d. Rigorous Statistical Evaluation & Conclusion
+        ctrl_obs = [100.0, 102.0, 98.0, 101.0, 99.0, 103.0, 97.0, 100.5, 99.5, 101.5]
+        treat_obs = [60.0, 62.0, 58.0, 61.0, 59.0, 63.0, 57.0, 60.5, 59.5, 61.5]
+
+        conclude_res = research_service.evaluate_hypotheses_and_conclude(
+            research_id=res_req.research_id,
+            test_evaluations=[
+                {
+                    "hypothesis_id": h1.hypothesis_id,
+                    "baseline": ctrl_obs,
+                    "treatment": treat_obs,
+                    "direction": "DECREASE",
+                },
+                {
+                    "hypothesis_id": h0.hypothesis_id,
+                    "baseline": ctrl_obs,
+                    "treatment": treat_obs,
+                    "direction": "INCREASE",
+                }
+            ],
+            direct_observations=["Empirical P99 latency dropped by ~40ms across 10 trials."]
+        )
+        assert conclude_res["success"] is True
+        assert conclude_res["conclusion"]["state"] == ConclusionState.SUPPORTED_WITHIN_SCOPE.value
+        print("      [35] Statistical Evaluation & Conclusion PASS (Welch confidence intervals & non-hallucinatory evaluation)")
+
+        # 30e. Cryptographic Reproducibility Manifest & Report
+        manifest = conclude_res["manifest"]
+        assert manifest["dataset_digest_sha256"] is not None
+        report_md = research_service.generate_report(res_req.research_id)
+        assert "# Scientific Research Report" in report_md
+        assert manifest["dataset_digest_sha256"] in report_md
+        print("      [35] Reproducibility Manifest & Report . PASS (Cryptographic dataset hash & verified citation reports)")
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        print(f"      [35] Autonomous Research Engine ........ FAIL ({e})")
+
     print("\n" + "=" * 60)
     print("Diagnostics complete.")
     print("=" * 60)
