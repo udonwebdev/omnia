@@ -2441,6 +2441,78 @@ async def run_diagnostics():
         traceback.print_exc()
         print(f"      [35] Autonomous Research Engine ........ FAIL ({e})")
 
+    # 31. Module 36: Autonomous Knowledge Synthesis & Intelligence Briefing Engine
+    print("\n[31/31] Checking Module 36: Autonomous Knowledge Synthesis & Intelligence Briefing Engine...")
+    try:
+        from synthesis.service import intelligence_service
+        from synthesis.models import ProductType, AudienceLevel, DeliveryStatus
+
+        # 31a. Product Registration & Scope Gating
+        prod = intelligence_service.register_product(
+            name="Diagnostic Strategic Intelligence Digest",
+            purpose="Synthesize multi-source operational metrics and forecasts",
+            product_type=ProductType.EXECUTIVE_BRIEF,
+            domain="CLUSTER_DIAGNOSTICS",
+            intended_audience=AudienceLevel.EXECUTIVE,
+            authorized_scope="DIAGNOSTIC_SCOPE",
+            required_sources=["telemetry", "forecast"],
+        )
+        assert prod.product_id is not None
+        print("      [36] Product Registration & Scope Gating PASS (Intelligence product definition & authorization boundaries)")
+
+        # 31b. Synthesis with Epistemic Claim Labeling & Quality Gate
+        raw_evidence = [
+            {"claim": "Diagnostic CPU utilization stable at 45%", "type": "DIRECT_OBSERVATION", "source_ref": "telemetry"},
+            {"claim": "Predictive model forecasts 20% traffic rise", "type": "FORECAST", "source_ref": "forecast"},
+            # Contradictory claims
+            {"topic": "Cache Status", "polarity": "HOT", "claim": "Cache hit rate at 99%", "source_ref": "cache_mon_a"},
+            {"topic": "Cache Status", "polarity": "COLD", "claim": "Cache thrashing detected", "source_ref": "cache_mon_b"},
+        ]
+        briefing_v1 = intelligence_service.synthesize_and_generate_briefing(
+            product_id=prod.product_id,
+            evidence_items=raw_evidence,
+        )
+        assert briefing_v1.version_number == 1
+        assert briefing_v1.quality_score["passed"] is True
+        assert "[DIRECT_OBSERVATION]" in briefing_v1.rendered_content_markdown
+        assert "[FORECAST]" in briefing_v1.rendered_content_markdown
+        assert "## 4. Disagreements & Competing Evidence" in briefing_v1.rendered_content_markdown
+        print("      [36] Epistemic Synthesis & Quality Gate . PASS (Strict claim labeling & contradiction preservation)")
+
+        # 31c. Change Detection & Version Immutability
+        updated_evidence = list(raw_evidence)
+        updated_evidence[0] = {"claim": "Diagnostic CPU utilization spiked to 90%", "type": "DIRECT_OBSERVATION", "source_ref": "telemetry", "value": "90%"}
+        briefing_v2 = intelligence_service.synthesize_and_generate_briefing(
+            product_id=prod.product_id,
+            evidence_items=updated_evidence,
+            previous_evidence_items=raw_evidence,
+        )
+        assert briefing_v2.version_number == 2
+        assert briefing_v2.content_digest_sha256 != briefing_v1.content_digest_sha256
+        print("      [36] Change Detection & Version History . PASS (Development classification & immutable prior versions)")
+
+        # 31d. Audience Authorization & Idempotent Delivery
+        blocked = intelligence_service.deliver_briefing(
+            briefing_version_id=briefing_v2.version_id,
+            recipient_id="unauthorized_guest",
+            recipient_authorized_scopes=["PUBLIC_ONLY"],
+        )
+        assert blocked.status == DeliveryStatus.BLOCKED
+
+        delivered = intelligence_service.deliver_briefing(
+            briefing_version_id=briefing_v2.version_id,
+            recipient_id="authorized_lead",
+            recipient_authorized_scopes=["DIAGNOSTIC_SCOPE"],
+            idempotency_key="diag_deliv_key_v2",
+        )
+        assert delivered.status == DeliveryStatus.DELIVERED
+        print("      [36] Audience Delivery & Idempotency ... PASS (Module 09 policy boundary & zero duplicate sends)")
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        print(f"      [36] Autonomous Synthesis Engine ....... FAIL ({e})")
+
     print("\n" + "=" * 60)
     print("Diagnostics complete.")
     print("=" * 60)

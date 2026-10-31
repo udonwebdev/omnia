@@ -7,7 +7,7 @@ from typing import List, Tuple
 
 logger = logging.getLogger("Omnia.Persistence.Migrations")
 
-CURRENT_SCHEMA_VERSION = 20
+CURRENT_SCHEMA_VERSION = 21
 
 MIGRATION_V1 = """
 -- Schema Version 1: Durable Task Graph & Crash Recovery Tables
@@ -2027,6 +2027,117 @@ CREATE TABLE IF NOT EXISTS research_reproducibility (
 CREATE INDEX IF NOT EXISTS idx_rr_research ON research_reproducibility(research_id);
 """
 
+MIGRATION_V21 = """
+-- Schema Version 21: Autonomous Knowledge Synthesis & Intelligence Briefing Engine
+
+CREATE TABLE IF NOT EXISTS intelligence_products (
+    product_id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    purpose TEXT NOT NULL,
+    product_type TEXT NOT NULL,
+    domain TEXT NOT NULL,
+    intended_audience TEXT NOT NULL,
+    authorized_scope TEXT NOT NULL,
+    required_sources TEXT NOT NULL,
+    update_cadence TEXT NOT NULL,
+    max_length_words INTEGER DEFAULT 1500,
+    freshness_window_sec REAL DEFAULT 86400.0,
+    retention_days INTEGER DEFAULT 90,
+    approval_required INTEGER DEFAULT 0,
+    version INTEGER DEFAULT 1,
+    state TEXT NOT NULL,
+    created_at REAL NOT NULL,
+    updated_at REAL NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_intel_prod_domain ON intelligence_products(domain);
+CREATE INDEX IF NOT EXISTS idx_intel_prod_state ON intelligence_products(state);
+
+CREATE TABLE IF NOT EXISTS intelligence_briefing_versions (
+    version_id TEXT PRIMARY KEY,
+    product_id TEXT NOT NULL,
+    version_number INTEGER NOT NULL,
+    title TEXT NOT NULL,
+    audience_level TEXT NOT NULL,
+    executive_summary TEXT NOT NULL,
+    rendered_content_markdown TEXT NOT NULL,
+    content_digest_sha256 TEXT NOT NULL,
+    evidence_sources_count INTEGER NOT NULL,
+    claims_count INTEGER NOT NULL,
+    quality_score TEXT NOT NULL,
+    approval_token TEXT,
+    is_stale INTEGER DEFAULT 0,
+    generated_at REAL NOT NULL,
+    FOREIGN KEY (product_id) REFERENCES intelligence_products(product_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_ibv_product ON intelligence_briefing_versions(product_id);
+
+CREATE TABLE IF NOT EXISTS intelligence_claims (
+    claim_id TEXT PRIMARY KEY,
+    briefing_version_id TEXT NOT NULL,
+    claim_text TEXT NOT NULL,
+    claim_type TEXT NOT NULL,
+    supporting_evidence_refs TEXT NOT NULL,
+    contradictory_evidence_refs TEXT NOT NULL,
+    confidence_assessment TEXT NOT NULL,
+    confidence_score REAL NOT NULL,
+    temporal_scope TEXT NOT NULL,
+    known_assumptions TEXT NOT NULL,
+    limitations TEXT NOT NULL,
+    created_at REAL NOT NULL,
+    FOREIGN KEY (briefing_version_id) REFERENCES intelligence_briefing_versions(version_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_ic_bver ON intelligence_claims(briefing_version_id);
+
+CREATE TABLE IF NOT EXISTS intelligence_contradictions (
+    contradiction_id TEXT PRIMARY KEY,
+    product_id TEXT NOT NULL,
+    claim_a TEXT NOT NULL,
+    claim_b TEXT NOT NULL,
+    source_a_ref TEXT NOT NULL,
+    source_b_ref TEXT NOT NULL,
+    divergence_reason TEXT NOT NULL,
+    status TEXT NOT NULL,
+    resolution_evidence_needed TEXT,
+    created_at REAL NOT NULL,
+    FOREIGN KEY (product_id) REFERENCES intelligence_products(product_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_icontra_prod ON intelligence_contradictions(product_id);
+
+CREATE TABLE IF NOT EXISTS intelligence_developments (
+    development_id TEXT PRIMARY KEY,
+    product_id TEXT NOT NULL,
+    change_type TEXT NOT NULL,
+    summary TEXT NOT NULL,
+    previous_state TEXT,
+    new_state TEXT,
+    source_refs TEXT NOT NULL,
+    significance_score REAL NOT NULL,
+    detected_at REAL NOT NULL,
+    FOREIGN KEY (product_id) REFERENCES intelligence_products(product_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_idev_prod ON intelligence_developments(product_id);
+
+CREATE TABLE IF NOT EXISTS intelligence_deliveries (
+    delivery_id TEXT PRIMARY KEY,
+    briefing_version_id TEXT NOT NULL,
+    recipient_id TEXT NOT NULL,
+    channel TEXT NOT NULL,
+    status TEXT NOT NULL,
+    idempotency_key TEXT UNIQUE NOT NULL,
+    error_message TEXT,
+    delivered_at REAL,
+    created_at REAL NOT NULL,
+    FOREIGN KEY (briefing_version_id) REFERENCES intelligence_briefing_versions(version_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_ideliv_bver ON intelligence_deliveries(briefing_version_id);
+"""
+
 def backup_database(db_path: str, backup_dir: str = "persistence_backups") -> str:
     """Creates a timestamped snapshot of the SQLite database prior to any schema modification."""
     if not os.path.exists(db_path):
@@ -2282,6 +2393,17 @@ def apply_migrations(db_path: str) -> int:
             conn.commit()
             logger.info("Migration v20 applied successfully.")
             current_version = 20
+
+        if current_version < 21:
+            logger.info("Applying Migration v21 (Autonomous Knowledge Synthesis & Intelligence Briefing Tables)...")
+            cursor.executescript(MIGRATION_V21)
+            cursor.execute(
+                "INSERT INTO schema_migrations (version, applied_at, description) VALUES (?, ?, ?)",
+                (21, time.time(), "Autonomous Knowledge Synthesis and Intelligence Briefing Engine tables")
+            )
+            conn.commit()
+            logger.info("Migration v21 applied successfully.")
+            current_version = 21
 
         return current_version
     except Exception as e:

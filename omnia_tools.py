@@ -2120,6 +2120,72 @@ def transcode_and_conform_media(
         return json.dumps({"success": False, "error": str(e)}, indent=2)
 
 @tool
+def switch_multicam_angle(
+    multicam_id: str,
+    frame: int,
+    new_angle_id: str
+) -> str:
+    """Records an angle switch decision on a multicamera sequence at sequence time frame."""
+    from video_studio.multicam_service import multicam_service
+    import json
+    try:
+        decisions = multicam_service.switch_angle_at_frame(multicam_id, frame, new_angle_id)
+        return json.dumps({"success": True, "decisions": [d.to_dict() for d in decisions]}, indent=2)
+    except Exception as e:
+        return json.dumps({"success": False, "error": str(e)}, indent=2)
+
+@tool
+def flatten_multicam_to_timeline(
+    multicam_id: str,
+    target_sequence_id: str
+) -> str:
+    """Flattens a multicamera sequence's angle decisions into timeline clips."""
+    from video_studio.multicam_service import multicam_service
+    from video_studio.timeline_service import timeline_service
+    import json
+    try:
+        target_seq = timeline_service.get_sequence(target_sequence_id)
+        if not target_seq:
+            return json.dumps({"success": False, "error": f"Target sequence '{target_sequence_id}' not found."}, indent=2)
+        res = multicam_service.flatten_to_sequence(multicam_id, target_seq)
+        return json.dumps({"success": res.is_success, "result": res.to_dict()}, indent=2)
+    except Exception as e:
+        return json.dumps({"success": False, "error": str(e)}, indent=2)
+
+@tool
+def stabilize_video_clip(
+    project_id: str,
+    asset_id: str,
+    clip_id: str = "clip_default",
+    smoothing_radius: int = 15,
+    auto_crop_zoom: bool = True
+) -> str:
+    """Executes motion analysis and enables non-destructive camera stabilization on a video clip."""
+    from video_studio.stabilization_service import stabilization_service
+    from video_studio.stabilization_models import StabilizationConfig
+    from video_studio.media_library import media_library_registry
+    import json
+    try:
+        pml = media_library_registry.get_or_create(project_id)
+        asset = pml.get_asset(asset_id)
+        if not asset:
+            return json.dumps({"success": False, "error": f"Asset '{asset_id}' not found."}, indent=2)
+        report = stabilization_service.analyze_clip(clip_id, asset)
+        cfg = StabilizationConfig(
+            is_enabled=True,
+            smoothing_radius=smoothing_radius,
+            auto_crop_zoom=auto_crop_zoom,
+        )
+        stabilization_service.update_clip_config(clip_id, asset_id, cfg)
+        return json.dumps({
+            "success": True,
+            "report": report.to_dict(),
+            "config": cfg.to_dict(),
+        }, indent=2)
+    except Exception as e:
+        return json.dumps({"success": False, "error": str(e)}, indent=2)
+
+@tool
 def list_graphics_templates() -> str:
     """Lists available built-in motion graphics and title templates."""
     from video_studio.motion_graphics_service import motion_graphics_service
@@ -3894,6 +3960,163 @@ def generate_reproducible_research_report(
     except Exception as e:
         return f"Error generating research report: {e}"
 
+@tool
+def register_intelligence_product(
+    name: str,
+    purpose: str,
+    product_type: str = "EXECUTIVE_BRIEF",
+    domain: str = "SYSTEMS_PERFORMANCE",
+    intended_audience: str = "EXECUTIVE",
+    authorized_scope: str = "INTERNAL_SERVICES",
+    required_sources_json: str = "[]",
+    cadence: str = "ON_DEMAND",
+    approval_required: bool = False
+) -> str:
+    """Registers an intelligence product definition for recurring or ad-hoc briefings."""
+    from synthesis.service import intelligence_service
+    from synthesis.models import ProductType, AudienceLevel
+    import json
+    try:
+        sources = json.loads(required_sources_json) if required_sources_json else ["telemetry"]
+        prod = intelligence_service.register_product(
+            name=name,
+            purpose=purpose,
+            product_type=ProductType(product_type),
+            domain=domain,
+            intended_audience=AudienceLevel(intended_audience),
+            authorized_scope=authorized_scope,
+            required_sources=sources,
+            update_cadence=cadence,
+            approval_required=approval_required,
+        )
+        return json.dumps({"success": True, "product": prod.to_dict()}, indent=2)
+    except Exception as e:
+        return json.dumps({"success": False, "error": str(e)}, indent=2)
+
+@tool
+def detect_intelligence_developments(
+    product_id: str,
+    current_evidence_json: str,
+    previous_evidence_json: str = "[]"
+) -> str:
+    """Detects meaningful developments and state shifts against prior evidence sets without rewriting history."""
+    from synthesis.service import intelligence_service
+    import json
+    try:
+        curr_ev = json.loads(current_evidence_json)
+        prev_ev = json.loads(previous_evidence_json) if previous_evidence_json else []
+        devs = intelligence_service.dev_detector.detect_changes(
+            product_id=product_id,
+            current_evidence_items=curr_ev,
+            previous_evidence_items=prev_ev,
+        )
+        return json.dumps({"success": True, "developments": [d.to_dict() for d in devs]}, indent=2)
+    except Exception as e:
+        return json.dumps({"success": False, "error": str(e)}, indent=2)
+
+@tool
+def analyze_intelligence_contradictions(
+    product_id: str,
+    evidence_json: str
+) -> str:
+    """Identifies and preserves conflicting evidence and disagreements across sources without erasing dissent."""
+    from synthesis.service import intelligence_service
+    import json
+    try:
+        ev = json.loads(evidence_json)
+        contras = intelligence_service.contradiction_analyzer.analyze_contradictions(
+            product_id=product_id,
+            evidence_items=ev,
+        )
+        return json.dumps({"success": True, "contradictions": [c.to_dict() for c in contras]}, indent=2)
+    except Exception as e:
+        return json.dumps({"success": False, "error": str(e)}, indent=2)
+
+@tool
+def assess_intelligence_significance(
+    change_id: str,
+    urgency: float,
+    potential_impact: float,
+    evidence_reliability: float,
+    affected_blast_radius: int = 1
+) -> str:
+    """Calculates an explainable, multi-dimensional significance score for intelligence developments."""
+    from synthesis.service import intelligence_service
+    import json
+    try:
+        assessment = intelligence_service.significance_service.assess(
+            event_or_change_id=change_id,
+            urgency=urgency,
+            potential_impact=potential_impact,
+            evidence_reliability=evidence_reliability,
+            affected_blast_radius=affected_blast_radius,
+        )
+        return json.dumps({"success": True, "assessment": assessment.to_dict()}, indent=2)
+    except Exception as e:
+        return json.dumps({"success": False, "error": str(e)}, indent=2)
+
+@tool
+def synthesize_intelligence_briefing(
+    product_id: str,
+    evidence_json: str,
+    previous_evidence_json: str = "[]",
+    custom_summary: str = "",
+    approval_token: str = ""
+) -> str:
+    """Synthesizes evidence, detects contradictions/developments, and renders a versioned intelligence briefing."""
+    from synthesis.service import intelligence_service
+    import json
+    try:
+        ev = json.loads(evidence_json)
+        prev_ev = json.loads(previous_evidence_json) if previous_evidence_json else []
+        briefing = intelligence_service.synthesize_and_generate_briefing(
+            product_id=product_id,
+            evidence_items=ev,
+            previous_evidence_items=prev_ev,
+            custom_summary=custom_summary if custom_summary else None,
+            approval_token=approval_token if approval_token else None,
+        )
+        return json.dumps({"success": True, "briefing": briefing.to_dict()}, indent=2)
+    except Exception as e:
+        return json.dumps({"success": False, "error": str(e)}, indent=2)
+
+@tool
+def deliver_intelligence_briefing(
+    version_id: str,
+    recipient_id: str,
+    channel: str = "INTERNAL_PORTAL",
+    authorized_scopes_json: str = "[]"
+) -> str:
+    """Coordinates audience-authorized and idempotent delivery of intelligence briefings."""
+    from synthesis.service import intelligence_service
+    import json
+    try:
+        scopes = json.loads(authorized_scopes_json) if authorized_scopes_json else ["*"]
+        rec = intelligence_service.deliver_briefing(
+            briefing_version_id=version_id,
+            recipient_id=recipient_id,
+            channel=channel,
+            recipient_authorized_scopes=scopes,
+        )
+        return json.dumps({"success": True, "delivery": rec.to_dict()}, indent=2)
+    except Exception as e:
+        return json.dumps({"success": False, "error": str(e)}, indent=2)
+
+@tool
+def evaluate_briefing_quality(
+    version_id: str
+) -> str:
+    """Audits briefing claims, provenance traceability, and citation integrity."""
+    from synthesis.service import intelligence_service
+    import json
+    try:
+        version = intelligence_service.repo.get_briefing_version(version_id)
+        if not version:
+            return json.dumps({"success": False, "error": "Version not found"}, indent=2)
+        return json.dumps({"success": True, "quality_score": version.quality_score}, indent=2)
+    except Exception as e:
+        return json.dumps({"success": False, "error": str(e)}, indent=2)
+
 OMNIA_ALL_TOOLS = [
     unlock_all_devices,
     play_youtube_video,
@@ -4102,6 +4325,13 @@ OMNIA_ALL_TOOLS = [
     execute_research_experiment,
     test_research_hypotheses,
     generate_reproducible_research_report,
+    register_intelligence_product,
+    detect_intelligence_developments,
+    analyze_intelligence_contradictions,
+    assess_intelligence_significance,
+    synthesize_intelligence_briefing,
+    deliver_intelligence_briefing,
+    evaluate_briefing_quality,
 ]
 
 # Backward compatibility alias
