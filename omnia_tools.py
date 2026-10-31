@@ -4884,7 +4884,343 @@ def create_timeline_revision_snapshot(
     except Exception as e:
         return json.dumps({"success": False, "error": str(e)}, indent=2)
 
+@tool
+def relink_project_media_asset(
+    project_id: str,
+    asset_id: str,
+    new_file_path: str,
+    actor_id: str = "editor",
+    is_dry_run: bool = False,
+) -> str:
+    """Relinks a missing or moved media asset to a new file location and updates references."""
+    from video_studio.provenance_service import provenance_service
+    import json
+    try:
+        res = provenance_service.relink_asset(
+            project_id=project_id,
+            asset_id=asset_id,
+            new_file_path=new_file_path,
+            actor_id=actor_id,
+            is_dry_run=is_dry_run,
+        )
+        return json.dumps({"success": res.success, "result": res.to_dict()}, indent=2)
+    except Exception as e:
+        return json.dumps({"success": False, "error": str(e)}, indent=2)
+
+@tool
+def execute_online_media_conform(
+    project_id: str,
+    sequence_id: str,
+    create_rollback_checkpoint: bool = True,
+    actor_id: str = "editor",
+) -> str:
+    """Performs preflight checks and conforms timeline sequence proxy clips back to high-resolution original media."""
+    from video_studio.conform_service import conform_service
+    import json
+    try:
+        res = conform_service.execute_online_conform(
+            project_id=project_id,
+            sequence_id=sequence_id,
+            create_rollback_checkpoint=create_rollback_checkpoint,
+            actor_id=actor_id,
+        )
+        return json.dumps({"success": res.success, "result": res.to_dict()}, indent=2)
+    except Exception as e:
+        return json.dumps({"success": False, "error": str(e)}, indent=2)
+
+@tool
+def submit_orchestrated_render_job(
+    project_id: str,
+    sequence_id: str,
+    output_path: str,
+    representation_mode: str = "ORIGINAL",
+    priority: int = 50,
+) -> str:
+    """Creates a validated, durable render orchestration job with atomic artifact verification and publication."""
+    from video_studio.orchestration_service import render_orchestration_service
+    from video_studio.export_models import ExportConfig
+    from video_studio.conform_models import MediaRepresentationMode
+    import json
+    try:
+        rep_mode = MediaRepresentationMode(representation_mode.upper())
+        job = render_orchestration_service.create_orchestrated_job(
+            project_id=project_id,
+            sequence_id=sequence_id,
+            output_path=output_path,
+            config=ExportConfig(),
+            representation_mode=rep_mode,
+            priority=priority,
+        )
+        # Preflight validate and queue
+        ok, errs = render_orchestration_service.validate_job(job.job_id)
+        return json.dumps({
+            "success": ok,
+            "job": job.to_dict(),
+            "validation_errors": errs,
+        }, indent=2)
+    except Exception as e:
+        return json.dumps({"success": False, "error": str(e)}, indent=2)
+
+@tool
+def register_render_farm_worker(
+    worker_id: str,
+    name: str,
+    secret_token: str,
+    has_gpu: bool = False,
+    max_concurrent_jobs: int = 2,
+) -> str:
+    """Registers an authenticated remote worker node into the Video Studio distributed render pool."""
+    from video_studio.remote_service import remote_worker_coordinator_service
+    import json
+    try:
+        worker = remote_worker_coordinator_service.register_worker(
+            worker_id=worker_id,
+            name=name,
+            secret_token=secret_token,
+            has_gpu=has_gpu,
+            max_concurrent_jobs=max_concurrent_jobs,
+        )
+        return json.dumps({"success": True, "worker": worker.to_dict()}, indent=2)
+    except Exception as e:
+        return json.dumps({"success": False, "error": str(e)}, indent=2)
+
+
+
+# =============================================================================
+# MODULE 38: AUTONOMOUS GOAL MANAGEMENT, OUTCOME TRACKING & STRATEGIC EXECUTION INTELLIGENCE
+# =============================================================================
+
+@tool
+def create_strategic_goal(
+    title: str,
+    description: str,
+    purpose: str,
+    owner: str,
+    goal_type: str = "STRATEGIC",
+    priority: str = "HIGH",
+    parent_goal_id: Optional[str] = None,
+    target_date: Optional[str] = None,
+    success_criteria_json: str = "[]",
+) -> str:
+    """Creates a persistent, versioned strategic goal in DRAFT state."""
+    from goals.service import goal_intelligence_service
+    from goals.models import GoalType, GoalPriority
+    import json
+    try:
+        criteria = json.loads(success_criteria_json)
+        goal = goal_intelligence_service.create_goal(
+            title=title,
+            description=description,
+            purpose=purpose,
+            owner=owner,
+            goal_type=GoalType(goal_type),
+            priority=GoalPriority(priority),
+            parent_goal_id=parent_goal_id,
+            target_date=target_date,
+            success_criteria=criteria,
+        )
+        return json.dumps({
+            "success": True,
+            "goal_id": goal.goal_id,
+            "title": goal.title,
+            "state": goal.state.value,
+            "version": goal.version,
+        }, indent=2)
+    except Exception as e:
+        return json.dumps({"success": False, "error": str(e)}, indent=2)
+
+@tool
+def register_goal_key_result(
+    goal_id: str,
+    metric_name: str,
+    description: str,
+    unit: str,
+    metric_type: str,
+    baseline_value: float,
+    target_value: float,
+    required_verification_tier: str = "SYSTEM_OBSERVED",
+) -> str:
+    """Registers an empirical, measurable Key Result definition under a goal."""
+    from goals.service import goal_intelligence_service
+    from goals.models import MetricType, VerificationTier
+    import json
+    try:
+        kr = goal_intelligence_service.define_key_result(
+            goal_id=goal_id,
+            metric_name=metric_name,
+            description=description,
+            unit=unit,
+            metric_type=MetricType(metric_type),
+            baseline_value=baseline_value,
+            target_value=target_value,
+            required_verification_tier=VerificationTier(required_verification_tier),
+        )
+        return json.dumps({
+            "success": True,
+            "key_result_id": kr.key_result_id,
+            "goal_id": kr.goal_id,
+            "metric_name": kr.metric_name,
+            "metric_type": kr.metric_type.value,
+            "baseline": kr.baseline_value,
+            "target": kr.target_value,
+        }, indent=2)
+    except Exception as e:
+        return json.dumps({"success": False, "error": str(e)}, indent=2)
+
+@tool
+def decompose_goal_initiative(
+    goal_id: str,
+    title: str,
+    scope: str,
+    expected_outcome: str,
+    owner: str,
+    task_graph_id: Optional[str] = None,
+) -> str:
+    """Decomposes a strategic goal into an actionable initiative connected to task graphs."""
+    from goals.service import goal_intelligence_service
+    import json
+    try:
+        init = goal_intelligence_service.decompose_initiative(
+            goal_id=goal_id,
+            title=title,
+            scope=scope,
+            expected_outcome=expected_outcome,
+            owner=owner,
+            task_graph_id=task_graph_id,
+        )
+        return json.dumps({
+            "success": True,
+            "initiative_id": init.initiative_id,
+            "goal_id": init.goal_id,
+            "title": init.title,
+            "status": init.status,
+        }, indent=2)
+    except Exception as e:
+        return json.dumps({"success": False, "error": str(e)}, indent=2)
+
+@tool
+def verify_goal_outcome_metric(
+    key_result_id: str,
+    observed_value: float,
+    verification_tier: str,
+    data_source: str,
+    evidence_summary: str,
+    evidence_payload_json: str = "{}",
+    verified_by: str = "system",
+    approval_token: Optional[str] = None,
+) -> str:
+    """Submits and validates independent evidence to verify actual outcome achievement."""
+    from goals.service import goal_intelligence_service
+    from goals.models import VerificationTier
+    import json
+    try:
+        payload = json.loads(evidence_payload_json)
+        ev = goal_intelligence_service.verify_outcome_metric(
+            key_result_id=key_result_id,
+            observed_value=observed_value,
+            verification_tier=VerificationTier(verification_tier),
+            data_source=data_source,
+            evidence_summary=evidence_summary,
+            evidence_payload=payload,
+            verified_by=verified_by,
+            approval_token=approval_token,
+        )
+        return json.dumps({
+            "success": True,
+            "evidence_id": ev.evidence_id,
+            "key_result_id": ev.key_result_id,
+            "observed_value": ev.observed_value,
+            "tier": ev.verification_tier.value,
+            "is_valid": ev.is_valid,
+            "evidence_hash": ev.evidence_hash,
+        }, indent=2)
+    except Exception as e:
+        return json.dumps({"success": False, "error": str(e)}, indent=2)
+
+@tool
+def assess_goal_health_and_progress(
+    goal_id: str,
+    schedule_variance_days: float = 0.0,
+    budget_variance_ratio: float = 0.0,
+) -> str:
+    """Evaluates goal health across 9 states and calculates activity vs verified outcome variance."""
+    from goals.service import goal_intelligence_service
+    import json
+    try:
+        prog = goal_intelligence_service.assess_progress(
+            goal_id=goal_id,
+            schedule_variance_days=schedule_variance_days,
+            budget_variance_ratio=budget_variance_ratio,
+        )
+        health = goal_intelligence_service.evaluate_health(goal_id)
+        forecast = goal_intelligence_service.forecasting.forecast_goal_outcome(goal_id)
+        return json.dumps({
+            "success": True,
+            "goal_id": goal_id,
+            "health_state": health.health_state.value,
+            "trajectory": health.progress_trajectory,
+            "primary_reason": health.primary_reason,
+            "risk_factors": health.risk_factors,
+            "reported_task_progress": prog.reported_task_progress,
+            "verified_outcome_progress": prog.verified_outcome_progress,
+            "activity_to_outcome_variance": prog.activity_to_outcome_variance,
+            "forecast_completion_probability": forecast["completion_probability"],
+            "expected_window": forecast["expected_completion_window"],
+        }, indent=2)
+    except Exception as e:
+        return json.dumps({"success": False, "error": str(e)}, indent=2)
+
+@tool
+def propose_and_approve_goal_remediation(
+    goal_id: str,
+    action_type: str,
+    title: str,
+    rationale: str,
+    approver: str,
+    approval_token: str,
+) -> str:
+    """Proposes and authorizes corrective actions under Module 20 human approval gate."""
+    from goals.service import goal_intelligence_service
+    from goals.models import CorrectiveActionType, CorrectiveActionProposal
+    import json, uuid
+    from datetime import datetime, timezone
+    try:
+        prop = CorrectiveActionProposal(
+            proposal_id=f"act-{uuid.uuid4().hex[:8]}",
+            goal_id=goal_id,
+            action_type=CorrectiveActionType(action_type),
+            title=title,
+            rationale=rationale,
+            expected_benefit="Remediate operational variance",
+            potential_cost="Documented trade-off",
+            risk_level="MEDIUM",
+            requires_human_approval=True,
+            status="PROPOSED",
+            created_at=datetime.now(timezone.utc).isoformat(),
+        )
+        goal_intelligence_service.repo.save_corrective_action(prop)
+        approved = goal_intelligence_service.approve_corrective_action(
+            proposal_id=prop.proposal_id,
+            approver=approver,
+            token=approval_token,
+        )
+        return json.dumps({
+            "success": True,
+            "proposal_id": approved.proposal_id,
+            "goal_id": approved.goal_id,
+            "action_type": approved.action_type.value,
+            "status": approved.status,
+            "approved_by": approved.approved_by,
+            "approval_token": approved.approval_token,
+        }, indent=2)
+    except Exception as e:
+        return json.dumps({"success": False, "error": str(e)}, indent=2)
+
 OMNIA_ALL_TOOLS = [
+    register_render_farm_worker,
+    submit_orchestrated_render_job,
+    execute_online_media_conform,
+    relink_project_media_asset,
     create_timeline_revision_snapshot,
     submit_video_review_comment,
     unlock_all_devices,
@@ -5124,6 +5460,12 @@ OMNIA_ALL_TOOLS = [
     execute_strategic_decision_analysis,
     record_authoritative_decision,
     monitor_decision_outcome,
+    create_strategic_goal,
+    register_goal_key_result,
+    decompose_goal_initiative,
+    verify_goal_outcome_metric,
+    assess_goal_health_and_progress,
+    propose_and_approve_goal_remediation,
 ]
 
 # Backward compatibility alias

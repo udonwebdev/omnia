@@ -7,7 +7,7 @@ from typing import List, Tuple
 
 logger = logging.getLogger("Omnia.Persistence.Migrations")
 
-CURRENT_SCHEMA_VERSION = 22
+CURRENT_SCHEMA_VERSION = 23
 
 MIGRATION_V1 = """
 -- Schema Version 1: Durable Task Graph & Crash Recovery Tables
@@ -2274,6 +2274,200 @@ CREATE TABLE IF NOT EXISTS strategy_outcomes (
 CREATE INDEX IF NOT EXISTS idx_strat_out_case ON strategy_outcomes(case_id);
 """
 
+
+MIGRATION_V23 = """
+-- Schema Version 23: Autonomous Goal Management, Outcome Tracking & Strategic Execution Intelligence
+
+CREATE TABLE IF NOT EXISTS goal_definitions (
+    goal_id TEXT PRIMARY KEY,
+    title TEXT NOT NULL,
+    description TEXT NOT NULL,
+    purpose TEXT NOT NULL,
+    owner TEXT NOT NULL,
+    goal_type TEXT NOT NULL,
+    priority TEXT NOT NULL,
+    state TEXT NOT NULL,
+    version INTEGER DEFAULT 1,
+    parent_goal_id TEXT,
+    start_date TEXT,
+    target_date TEXT,
+    success_criteria_json TEXT NOT NULL DEFAULT '[]',
+    constraints_json TEXT NOT NULL DEFAULT '[]',
+    dependencies_json TEXT NOT NULL DEFAULT '[]',
+    resources_json TEXT NOT NULL DEFAULT '{}',
+    review_schedule TEXT DEFAULT 'WEEKLY',
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    FOREIGN KEY (parent_goal_id) REFERENCES goal_definitions(goal_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_goal_owner ON goal_definitions(owner);
+CREATE INDEX IF NOT EXISTS idx_goal_state ON goal_definitions(state);
+CREATE INDEX IF NOT EXISTS idx_goal_parent ON goal_definitions(parent_goal_id);
+
+CREATE TABLE IF NOT EXISTS goal_versions (
+    snapshot_id TEXT PRIMARY KEY,
+    goal_id TEXT NOT NULL,
+    version INTEGER NOT NULL,
+    title TEXT NOT NULL,
+    description TEXT NOT NULL,
+    state TEXT NOT NULL,
+    target_date TEXT,
+    success_criteria_json TEXT NOT NULL DEFAULT '[]',
+    constraints_json TEXT NOT NULL DEFAULT '[]',
+    changed_by TEXT NOT NULL,
+    change_reason TEXT NOT NULL,
+    snapshot_at TEXT NOT NULL,
+    FOREIGN KEY (goal_id) REFERENCES goal_definitions(goal_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_goal_version_goal ON goal_versions(goal_id);
+
+CREATE TABLE IF NOT EXISTS goal_key_results (
+    key_result_id TEXT PRIMARY KEY,
+    goal_id TEXT NOT NULL,
+    metric_name TEXT NOT NULL,
+    description TEXT NOT NULL,
+    unit TEXT NOT NULL,
+    metric_type TEXT NOT NULL,
+    baseline_value REAL NOT NULL,
+    target_value REAL NOT NULL,
+    current_reported_value REAL NOT NULL DEFAULT 0.0,
+    current_verified_value REAL NOT NULL DEFAULT 0.0,
+    measurement_frequency TEXT NOT NULL DEFAULT 'DAILY',
+    calculation_method TEXT NOT NULL DEFAULT 'DIRECT',
+    required_verification_tier TEXT NOT NULL DEFAULT 'SYSTEM_OBSERVED',
+    confidence REAL NOT NULL DEFAULT 1.0,
+    is_satisfied INTEGER NOT NULL DEFAULT 0,
+    last_updated TEXT NOT NULL,
+    FOREIGN KEY (goal_id) REFERENCES goal_definitions(goal_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_goal_kr_goal ON goal_key_results(goal_id);
+
+CREATE TABLE IF NOT EXISTS goal_evidence_records (
+    evidence_id TEXT PRIMARY KEY,
+    key_result_id TEXT NOT NULL,
+    goal_id TEXT NOT NULL,
+    verification_tier TEXT NOT NULL,
+    data_source TEXT NOT NULL,
+    observed_value REAL NOT NULL,
+    evidence_summary TEXT NOT NULL,
+    evidence_payload_json TEXT NOT NULL DEFAULT '{}',
+    evidence_hash TEXT NOT NULL,
+    verified_by TEXT NOT NULL,
+    approval_token TEXT,
+    verified_at TEXT NOT NULL,
+    is_valid INTEGER NOT NULL DEFAULT 1,
+    FOREIGN KEY (key_result_id) REFERENCES goal_key_results(key_result_id),
+    FOREIGN KEY (goal_id) REFERENCES goal_definitions(goal_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_goal_evidence_kr ON goal_evidence_records(key_result_id);
+
+CREATE TABLE IF NOT EXISTS goal_initiatives (
+    initiative_id TEXT PRIMARY KEY,
+    goal_id TEXT NOT NULL,
+    title TEXT NOT NULL,
+    scope TEXT NOT NULL,
+    expected_outcome TEXT NOT NULL,
+    owner TEXT NOT NULL,
+    required_capabilities_json TEXT NOT NULL DEFAULT '[]',
+    dependencies_json TEXT NOT NULL DEFAULT '[]',
+    resources_json TEXT NOT NULL DEFAULT '{}',
+    target_date TEXT,
+    status TEXT NOT NULL DEFAULT 'PLANNED',
+    task_graph_id TEXT,
+    created_at TEXT NOT NULL,
+    FOREIGN KEY (goal_id) REFERENCES goal_definitions(goal_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_goal_init_goal ON goal_initiatives(goal_id);
+
+CREATE TABLE IF NOT EXISTS goal_milestones (
+    milestone_id TEXT PRIMARY KEY,
+    initiative_id TEXT NOT NULL,
+    goal_id TEXT NOT NULL,
+    title TEXT NOT NULL,
+    description TEXT NOT NULL,
+    target_date TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'PENDING',
+    completed_at TEXT,
+    verification_evidence_id TEXT,
+    FOREIGN KEY (initiative_id) REFERENCES goal_initiatives(initiative_id),
+    FOREIGN KEY (goal_id) REFERENCES goal_definitions(goal_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_goal_milestone_init ON goal_milestones(initiative_id);
+
+CREATE TABLE IF NOT EXISTS goal_progress_snapshots (
+    assessment_id TEXT PRIMARY KEY,
+    goal_id TEXT NOT NULL,
+    reported_task_progress REAL NOT NULL,
+    verified_outcome_progress REAL NOT NULL,
+    activity_to_outcome_variance REAL NOT NULL,
+    schedule_variance_days REAL NOT NULL DEFAULT 0.0,
+    budget_variance_ratio REAL NOT NULL DEFAULT 0.0,
+    assessed_at TEXT NOT NULL,
+    FOREIGN KEY (goal_id) REFERENCES goal_definitions(goal_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_goal_prog_goal ON goal_progress_snapshots(goal_id);
+
+CREATE TABLE IF NOT EXISTS goal_health_assessments (
+    health_id TEXT PRIMARY KEY,
+    goal_id TEXT NOT NULL,
+    health_state TEXT NOT NULL,
+    primary_reason TEXT NOT NULL,
+    progress_trajectory TEXT NOT NULL,
+    risk_factors_json TEXT NOT NULL DEFAULT '[]',
+    stale_metric_count INTEGER NOT NULL DEFAULT 0,
+    blocked_dependency_count INTEGER NOT NULL DEFAULT 0,
+    confidence_score REAL NOT NULL DEFAULT 1.0,
+    assessed_at TEXT NOT NULL,
+    FOREIGN KEY (goal_id) REFERENCES goal_definitions(goal_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_goal_health_goal ON goal_health_assessments(goal_id);
+
+CREATE TABLE IF NOT EXISTS goal_corrective_actions (
+    proposal_id TEXT PRIMARY KEY,
+    goal_id TEXT NOT NULL,
+    action_type TEXT NOT NULL,
+    title TEXT NOT NULL,
+    rationale TEXT NOT NULL,
+    expected_benefit TEXT NOT NULL,
+    potential_cost TEXT NOT NULL,
+    risk_level TEXT NOT NULL,
+    dependencies_json TEXT NOT NULL DEFAULT '[]',
+    supporting_evidence_json TEXT NOT NULL DEFAULT '[]',
+    requires_human_approval INTEGER NOT NULL DEFAULT 1,
+    status TEXT NOT NULL DEFAULT 'PROPOSED',
+    approval_token TEXT,
+    approved_by TEXT,
+    created_at TEXT NOT NULL,
+    FOREIGN KEY (goal_id) REFERENCES goal_definitions(goal_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_goal_action_goal ON goal_corrective_actions(goal_id);
+
+CREATE TABLE IF NOT EXISTS goal_change_audit (
+    audit_id TEXT PRIMARY KEY,
+    goal_id TEXT NOT NULL,
+    change_type TEXT NOT NULL,
+    field_name TEXT NOT NULL,
+    old_value_json TEXT,
+    new_value_json TEXT,
+    author TEXT NOT NULL,
+    rationale TEXT NOT NULL,
+    approval_token TEXT,
+    timestamp TEXT NOT NULL,
+    FOREIGN KEY (goal_id) REFERENCES goal_definitions(goal_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_goal_audit_goal ON goal_change_audit(goal_id);
+"""
+
 def backup_database(db_path: str, backup_dir: str = "persistence_backups") -> str:
     """Creates a timestamped snapshot of the SQLite database prior to any schema modification."""
     if not os.path.exists(db_path):
@@ -2551,6 +2745,17 @@ def apply_migrations(db_path: str) -> int:
             conn.commit()
             logger.info("Migration v22 applied successfully.")
             current_version = 22
+
+        if current_version < 23:
+            logger.info("Applying Migration v23 (Autonomous Goal Management & Outcome Tracking Tables)...")
+            cursor.executescript(MIGRATION_V23)
+            cursor.execute(
+                "INSERT INTO schema_migrations (version, applied_at, description) VALUES (?, ?, ?)",
+                (23, time.time(), "Autonomous Goal Management, Outcome Tracking & Strategic Execution Intelligence tables")
+            )
+            conn.commit()
+            logger.info("Migration v23 applied successfully.")
+            current_version = 23
 
         return current_version
     except Exception as e:

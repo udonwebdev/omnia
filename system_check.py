@@ -2615,6 +2615,120 @@ async def run_diagnostics():
         traceback.print_exc()
         print(f"      [37] Strategic Decision Support Engine . FAIL ({e})")
 
+
+    # -------------------------------------------------------------
+    # Stage 33: Module 38 — Autonomous Goal Management, Outcome Tracking & Strategic Execution Intelligence
+    # -------------------------------------------------------------
+    print("\n[33/33] Checking Module 38: Autonomous Goal Management, Outcome Tracking & Strategic Execution Intelligence...")
+    try:
+        from goals.service import goal_intelligence_service
+        from goals.models import GoalType, GoalPriority, GoalLifecycleState, MetricType, VerificationTier, GoalHealthState
+
+        # 33a. Goal Creation & Hierarchical Decomposition
+        g = goal_intelligence_service.create_goal(
+            title="Diagnostic Strategic Goal",
+            description="Autonomous health diagnostic goal",
+            purpose="System check verification",
+            owner="diagnostician",
+            goal_type=GoalType.STRATEGIC,
+            priority=GoalPriority.HIGH,
+            target_date="2026-12-31T00:00:00Z",
+        )
+        assert g.goal_id is not None
+        assert g.version == 1
+        goal_intelligence_service.activate_goal(g.goal_id, "diagnostician")
+
+        init = goal_intelligence_service.decompose_initiative(
+            goal_id=g.goal_id,
+            title="Core Ingestion Acceleration",
+            scope="Pipeline tuning",
+            expected_outcome="Throughput multiplier",
+            owner="diagnostician",
+        )
+        ms = goal_intelligence_service.register_milestone(
+            initiative_id=init.initiative_id,
+            title="Ring Buffer Implemented",
+            description="Milestone gate",
+            target_date="2026-11-15T00:00:00Z",
+        )
+        goal_intelligence_service.complete_milestone(ms.milestone_id)
+        print("      [38] Goal Lifecycle & Decomposition ... PASS (Creation, activation, initiative & milestone gates)")
+
+        # 33b. Key Results & Activity-to-Outcome Divergence Detection
+        kr_throughput = goal_intelligence_service.define_key_result(
+            goal_id=g.goal_id,
+            metric_name="Throughput",
+            description="Events per sec",
+            unit="eps",
+            metric_type=MetricType.INCREASING,
+            baseline_value=1000.0,
+            target_value=10000.0,
+            required_verification_tier=VerificationTier.SYSTEM_OBSERVED,
+        )
+        # Self-reported progress without verification
+        goal_intelligence_service.record_reported_progress(kr_throughput.key_result_id, 10000.0, "worker")
+        prog_busy = goal_intelligence_service.assess_progress(g.goal_id)
+        assert prog_busy.reported_task_progress == 1.0
+        assert prog_busy.verified_outcome_progress == 0.0
+        assert prog_busy.activity_to_outcome_variance == 1.0
+        print("      [38] Activity vs Outcome Divergence .... PASS (Busywork detected: 100% reported vs 0% verified)")
+
+        # 33c. Independent Outcome Verification & Health Assessment
+        ev = goal_intelligence_service.verify_outcome_metric(
+            key_result_id=kr_throughput.key_result_id,
+            observed_value=10500.0,
+            verification_tier=VerificationTier.SYSTEM_OBSERVED,
+            data_source="load_test_telemetry",
+            evidence_summary="Verified 10.5k eps under production soak test",
+            evidence_payload={"eps": 10500},
+            verified_by="telemetry_oracle",
+        )
+        assert ev.is_valid is True
+        prog_verified = goal_intelligence_service.assess_progress(g.goal_id)
+        assert prog_verified.verified_outcome_progress == 1.0
+        health = goal_intelligence_service.evaluate_health(g.goal_id)
+        assert health.health_state == GoalHealthState.COMPLETED
+        print("      [38] Independent Outcome Verification .. PASS (Multi-tier evidence gating & truth enforcement)")
+
+        # 33d. Corrective Action Gating & Human Approval
+        # Create second goal with schedule delay
+        g_delay = goal_intelligence_service.create_goal(
+            title="Delayed Project",
+            description="Lagging timeline",
+            purpose="Delay test",
+            owner="diagnostician",
+        )
+        goal_intelligence_service.activate_goal(g_delay.goal_id, "diagnostician")
+        goal_intelligence_service.define_key_result(
+            goal_id=g_delay.goal_id,
+            metric_name="Progress",
+            description="Ratio",
+            unit="pct",
+            metric_type=MetricType.INCREASING,
+            baseline_value=0.0,
+            target_value=100.0,
+        )
+        goal_intelligence_service.assess_progress(g_delay.goal_id, schedule_variance_days=25.0)
+        goal_intelligence_service.evaluate_health(g_delay.goal_id)
+        proposals = goal_intelligence_service.generate_corrective_proposals(g_delay.goal_id)
+        assert len(proposals) >= 1
+        # Block unapproved corrective execution
+        try:
+            goal_intelligence_service.approve_corrective_action(proposals[0].proposal_id, "diagnostician", "")
+            assert False, "Failed to block unapproved corrective action"
+        except PermissionError:
+            pass
+        approved = goal_intelligence_service.approve_corrective_action(
+            proposals[0].proposal_id, "diagnostician", "token-m20-diag-38"
+        )
+        assert approved.status == "APPROVED"
+        print("      [38] Corrective Actions & Approval Gate . PASS (Module 20 token enforcement & remediation)")
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        print(f"      [38] Goal Management & Outcome Engine .. FAIL ({e})")
+
     print("\n" + "=" * 60)
     print("Diagnostics complete.")
     print("=" * 60)
