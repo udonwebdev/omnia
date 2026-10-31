@@ -7,7 +7,7 @@ from typing import List, Tuple
 
 logger = logging.getLogger("Omnia.Persistence.Migrations")
 
-CURRENT_SCHEMA_VERSION = 23
+CURRENT_SCHEMA_VERSION = 24
 
 MIGRATION_V1 = """
 -- Schema Version 1: Durable Task Graph & Crash Recovery Tables
@@ -2468,6 +2468,176 @@ CREATE TABLE IF NOT EXISTS goal_change_audit (
 CREATE INDEX IF NOT EXISTS idx_goal_audit_goal ON goal_change_audit(goal_id);
 """
 
+
+MIGRATION_V24 = """
+-- Schema Version 24: Autonomous Workflow Optimization & Process Intelligence Engine
+
+CREATE TABLE IF NOT EXISTS proc_execution_traces (
+    trace_id TEXT PRIMARY KEY,
+    workflow_id TEXT NOT NULL,
+    execution_id TEXT NOT NULL,
+    status TEXT NOT NULL,
+    started_at TEXT NOT NULL,
+    completed_at TEXT,
+    total_duration_sec REAL NOT NULL DEFAULT 0.0,
+    total_waiting_sec REAL NOT NULL DEFAULT 0.0,
+    total_active_sec REAL NOT NULL DEFAULT 0.0,
+    retry_count INTEGER NOT NULL DEFAULT 0,
+    failure_count INTEGER NOT NULL DEFAULT 0,
+    is_complete INTEGER NOT NULL DEFAULT 0,
+    events_count INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE INDEX IF NOT EXISTS idx_proc_trace_workflow ON proc_execution_traces(workflow_id);
+CREATE INDEX IF NOT EXISTS idx_proc_trace_status ON proc_execution_traces(status);
+
+CREATE TABLE IF NOT EXISTS proc_events (
+    event_id TEXT PRIMARY KEY,
+    trace_id TEXT NOT NULL,
+    workflow_id TEXT NOT NULL,
+    task_id TEXT NOT NULL,
+    parent_task_id TEXT,
+    event_type TEXT NOT NULL,
+    timestamp TEXT NOT NULL,
+    duration_sec REAL NOT NULL DEFAULT 0.0,
+    waiting_time_sec REAL NOT NULL DEFAULT 0.0,
+    error_category TEXT,
+    resource_id TEXT,
+    metadata_json TEXT NOT NULL DEFAULT '{}',
+    FOREIGN KEY (trace_id) REFERENCES proc_execution_traces(trace_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_proc_event_trace ON proc_events(trace_id);
+CREATE INDEX IF NOT EXISTS idx_proc_event_task ON proc_events(task_id);
+
+CREATE TABLE IF NOT EXISTS proc_graphs (
+    graph_id TEXT PRIMARY KEY,
+    workflow_id TEXT NOT NULL,
+    version INTEGER NOT NULL DEFAULT 1,
+    nodes_json TEXT NOT NULL DEFAULT '{}',
+    edges_json TEXT NOT NULL DEFAULT '[]',
+    common_paths_json TEXT NOT NULL DEFAULT '[]',
+    created_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_proc_graph_workflow ON proc_graphs(workflow_id);
+
+CREATE TABLE IF NOT EXISTS proc_performance_snapshots (
+    snapshot_id TEXT PRIMARY KEY,
+    workflow_id TEXT NOT NULL,
+    trace_count INTEGER NOT NULL DEFAULT 0,
+    mean_duration_sec REAL NOT NULL DEFAULT 0.0,
+    median_duration_sec REAL NOT NULL DEFAULT 0.0,
+    p90_duration_sec REAL NOT NULL DEFAULT 0.0,
+    p95_duration_sec REAL NOT NULL DEFAULT 0.0,
+    p99_duration_sec REAL NOT NULL DEFAULT 0.0,
+    mean_waiting_time_sec REAL NOT NULL DEFAULT 0.0,
+    active_to_wait_ratio REAL NOT NULL DEFAULT 0.0,
+    overall_failure_rate REAL NOT NULL DEFAULT 0.0,
+    retry_frequency_per_trace REAL NOT NULL DEFAULT 0.0,
+    assessed_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_proc_perf_workflow ON proc_performance_snapshots(workflow_id);
+
+CREATE TABLE IF NOT EXISTS proc_bottleneck_findings (
+    finding_id TEXT PRIMARY KEY,
+    workflow_id TEXT NOT NULL,
+    component_id TEXT NOT NULL,
+    bottleneck_type TEXT NOT NULL,
+    severity TEXT NOT NULL,
+    estimated_delay_sec REAL NOT NULL DEFAULT 0.0,
+    frequency_ratio REAL NOT NULL DEFAULT 0.0,
+    confidence REAL NOT NULL DEFAULT 1.0,
+    potential_causes_json TEXT NOT NULL DEFAULT '[]',
+    recommended_action TEXT NOT NULL DEFAULT '',
+    supporting_trace_ids_json TEXT NOT NULL DEFAULT '[]',
+    detected_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_proc_bottle_workflow ON proc_bottleneck_findings(workflow_id);
+
+CREATE TABLE IF NOT EXISTS proc_deviations (
+    deviation_id TEXT PRIMARY KEY,
+    trace_id TEXT NOT NULL,
+    workflow_id TEXT NOT NULL,
+    deviation_type TEXT NOT NULL,
+    severity TEXT NOT NULL,
+    description TEXT NOT NULL,
+    policy_rule_violated TEXT,
+    detected_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_proc_dev_workflow ON proc_deviations(workflow_id);
+
+CREATE TABLE IF NOT EXISTS proc_failure_patterns (
+    pattern_id TEXT PRIMARY KEY,
+    workflow_id TEXT NOT NULL,
+    error_type TEXT NOT NULL,
+    affected_tasks_json TEXT NOT NULL DEFAULT '[]',
+    occurrence_count INTEGER NOT NULL DEFAULT 0,
+    total_rework_duration_sec REAL NOT NULL DEFAULT 0.0,
+    estimated_rework_cost REAL NOT NULL DEFAULT 0.0,
+    identified_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_proc_fail_workflow ON proc_failure_patterns(workflow_id);
+
+CREATE TABLE IF NOT EXISTS proc_optimization_candidates (
+    candidate_id TEXT PRIMARY KEY,
+    workflow_id TEXT NOT NULL,
+    current_version INTEGER NOT NULL DEFAULT 1,
+    optimization_type TEXT NOT NULL,
+    title TEXT NOT NULL,
+    description TEXT NOT NULL,
+    current_behavior TEXT NOT NULL,
+    proposed_behavior TEXT NOT NULL,
+    expected_time_reduction_pct REAL NOT NULL DEFAULT 0.0,
+    expected_cost_reduction_pct REAL NOT NULL DEFAULT 0.0,
+    reversibility_score REAL NOT NULL DEFAULT 1.0,
+    validation_strategy TEXT NOT NULL,
+    rollback_strategy TEXT NOT NULL,
+    supporting_evidence_json TEXT NOT NULL DEFAULT '[]',
+    status TEXT NOT NULL DEFAULT 'PROPOSED',
+    created_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_proc_opt_workflow ON proc_optimization_candidates(workflow_id);
+
+CREATE TABLE IF NOT EXISTS proc_experiments (
+    experiment_id TEXT PRIMARY KEY,
+    candidate_id TEXT NOT NULL,
+    workflow_id TEXT NOT NULL,
+    baseline_trace_count INTEGER NOT NULL DEFAULT 0,
+    target_trace_count INTEGER NOT NULL DEFAULT 0,
+    guardrail_metrics_json TEXT NOT NULL DEFAULT '{}',
+    observed_improvement_pct REAL NOT NULL DEFAULT 0.0,
+    is_guardrail_breached INTEGER NOT NULL DEFAULT 0,
+    status TEXT NOT NULL DEFAULT 'RUNNING',
+    started_at TEXT NOT NULL,
+    completed_at TEXT,
+    FOREIGN KEY (candidate_id) REFERENCES proc_optimization_candidates(candidate_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_proc_exp_candidate ON proc_experiments(candidate_id);
+
+CREATE TABLE IF NOT EXISTS proc_change_governance (
+    governance_id TEXT PRIMARY KEY,
+    workflow_id TEXT NOT NULL,
+    candidate_id TEXT NOT NULL,
+    from_version INTEGER NOT NULL,
+    to_version INTEGER NOT NULL,
+    approved_by TEXT,
+    approval_token TEXT,
+    change_status TEXT NOT NULL DEFAULT 'PENDING_APPROVAL',
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    FOREIGN KEY (candidate_id) REFERENCES proc_optimization_candidates(candidate_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_proc_gov_workflow ON proc_change_governance(workflow_id);
+"""
+
 def backup_database(db_path: str, backup_dir: str = "persistence_backups") -> str:
     """Creates a timestamped snapshot of the SQLite database prior to any schema modification."""
     if not os.path.exists(db_path):
@@ -2756,6 +2926,17 @@ def apply_migrations(db_path: str) -> int:
             conn.commit()
             logger.info("Migration v23 applied successfully.")
             current_version = 23
+
+        if current_version < 24:
+            logger.info("Applying Migration v24 (Autonomous Workflow Optimization & Process Intelligence Tables)...")
+            cursor.executescript(MIGRATION_V24)
+            cursor.execute(
+                "INSERT INTO schema_migrations (version, applied_at, description) VALUES (?, ?, ?)",
+                (24, time.time(), "Autonomous Workflow Optimization and Process Intelligence Engine tables")
+            )
+            conn.commit()
+            logger.info("Migration v24 applied successfully.")
+            current_version = 24
 
         return current_version
     except Exception as e:

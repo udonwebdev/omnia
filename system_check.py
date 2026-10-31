@@ -2729,6 +2729,89 @@ async def run_diagnostics():
         traceback.print_exc()
         print(f"      [38] Goal Management & Outcome Engine .. FAIL ({e})")
 
+
+    # -------------------------------------------------------------
+    # Stage 34: Module 39 — Autonomous Workflow Optimization & Process Intelligence Engine
+    # -------------------------------------------------------------
+    print("\n[34/34] Checking Module 39: Autonomous Workflow Optimization & Process Intelligence Engine...")
+    try:
+        from process_intelligence.service import process_intelligence_service
+        from process_intelligence.models import ProcessEventType, TraceStatus, BottleneckType, OptimizationStatus
+
+        # 34a. Trace Ingestion & Reconstruction
+        wf_diag = "wf_diag_process"
+        trace_id = "trace_diag_101"
+        process_intelligence_service.record_event(
+            trace_id=trace_id,
+            workflow_id=wf_diag,
+            task_id="step_a_init",
+            event_type=ProcessEventType.TASK_COMPLETE,
+            timestamp="2026-10-31T15:00:00Z",
+            duration_sec=3.0,
+            waiting_time_sec=0.5,
+        )
+        process_intelligence_service.record_event(
+            trace_id=trace_id,
+            workflow_id=wf_diag,
+            task_id="step_b_heavy_queue",
+            event_type=ProcessEventType.TASK_COMPLETE,
+            timestamp="2026-10-31T15:00:10Z",
+            duration_sec=4.0,
+            waiting_time_sec=16.0,  # Queue bottleneck
+        )
+        t = process_intelligence_service.reconstruct_trace(trace_id)
+        assert t.is_complete is True
+        assert t.total_duration_sec == 23.5
+        print("      [39] Trace Ingestion & Reconstruction .. PASS (Chronological ordering & active/wait split)")
+
+        # 34b. Process Graph & Performance Statistical Percentiles
+        g = process_intelligence_service.build_process_graph(wf_diag)
+        assert len(g.nodes) == 2
+        perf = process_intelligence_service.analyze_performance(wf_diag)
+        assert perf.mean_duration_sec == 23.5
+        assert perf.mean_waiting_time_sec == 16.5
+        print("      [39] Graph Reconstruction & Percentiles . PASS (Aggregated nodes, edges & latency distribution)")
+
+        # 34c. Evidence-Backed Bottleneck & Counterfactual Simulation
+        bottlenecks = process_intelligence_service.detect_bottlenecks(wf_diag)
+        assert len(bottlenecks) >= 1
+        assert bottlenecks[0].bottleneck_type == BottleneckType.QUEUE_WAITING
+        cands = process_intelligence_service.generate_optimizations(wf_diag)
+        assert len(cands) >= 1
+        sim = process_intelligence_service.simulate_optimization(cands[0].candidate_id)
+        assert sim["is_simulation"] is True
+        assert sim["simulated_speedup_pct"] > 0.0
+        print("      [39] Bottleneck Detection & Simulation .. PASS (Queue detection & digital-twin counterfactual)")
+
+        # 34d. Change Governance & Human Approval Gate
+        try:
+            process_intelligence_service.submit_and_approve_change(
+                workflow_id=wf_diag,
+                candidate_id=cands[0].candidate_id,
+                from_version=1,
+                to_version=2,
+                approver="diagnostician",
+                approval_token="",
+            )
+            assert False, "Failed to block unapproved workflow change"
+        except PermissionError:
+            pass
+        approved = process_intelligence_service.submit_and_approve_change(
+            workflow_id=wf_diag,
+            candidate_id=cands[0].candidate_id,
+            from_version=1,
+            to_version=2,
+            approver="diagnostician",
+            approval_token="token-m20-diag-39",
+        )
+        assert approved.change_status == "APPROVED"
+        print("      [39] Workflow Change Governance ........ PASS (Module 20 token gate & version preservation)")
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        print(f"      [39] Process Intelligence Engine ....... FAIL ({e})")
+
     print("\n" + "=" * 60)
     print("Diagnostics complete.")
     print("=" * 60)

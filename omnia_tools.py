@@ -5216,6 +5216,199 @@ def propose_and_approve_goal_remediation(
     except Exception as e:
         return json.dumps({"success": False, "error": str(e)}, indent=2)
 
+
+
+# =============================================================================
+# MODULE 39: AUTONOMOUS WORKFLOW OPTIMIZATION & PROCESS INTELLIGENCE ENGINE
+# =============================================================================
+
+@tool
+def record_workflow_process_event(
+    trace_id: str,
+    workflow_id: str,
+    task_id: str,
+    event_type: str,
+    duration_sec: float = 0.0,
+    waiting_time_sec: float = 0.0,
+    error_category: Optional[str] = None,
+    resource_id: Optional[str] = None,
+) -> str:
+    """Ingests a normalized process execution event and updates the trace container."""
+    from process_intelligence.service import process_intelligence_service
+    from process_intelligence.models import ProcessEventType
+    import json
+    try:
+        evt = process_intelligence_service.record_event(
+            trace_id=trace_id,
+            workflow_id=workflow_id,
+            task_id=task_id,
+            event_type=ProcessEventType(event_type),
+            duration_sec=duration_sec,
+            waiting_time_sec=waiting_time_sec,
+            error_category=error_category,
+            resource_id=resource_id,
+        )
+        return json.dumps({
+            "success": True,
+            "event_id": evt.event_id,
+            "trace_id": evt.trace_id,
+            "task_id": evt.task_id,
+            "event_type": evt.event_type.value,
+        }, indent=2)
+    except Exception as e:
+        return json.dumps({"success": False, "error": str(e)}, indent=2)
+
+@tool
+def reconstruct_and_analyze_workflow(
+    trace_id: str,
+    workflow_id: str,
+) -> str:
+    """Reconstructs the execution trace, updates the process graph, and computes performance percentiles."""
+    from process_intelligence.service import process_intelligence_service
+    import json
+    try:
+        trace = process_intelligence_service.reconstruct_trace(trace_id)
+        graph = process_intelligence_service.build_process_graph(workflow_id)
+        perf = process_intelligence_service.analyze_performance(workflow_id)
+        return json.dumps({
+            "success": True,
+            "trace_id": trace.trace_id,
+            "is_complete": trace.is_complete,
+            "total_duration_sec": trace.total_duration_sec,
+            "total_active_sec": trace.total_active_sec,
+            "total_waiting_sec": trace.total_waiting_sec,
+            "graph_nodes_count": len(graph.nodes),
+            "graph_edges_count": len(graph.edges),
+            "mean_duration_sec": perf.mean_duration_sec,
+            "p95_duration_sec": perf.p95_duration_sec,
+        }, indent=2)
+    except Exception as e:
+        return json.dumps({"success": False, "error": str(e)}, indent=2)
+
+@tool
+def detect_workflow_bottlenecks(
+    workflow_id: str,
+) -> str:
+    """Scans workflow traces to identify queue delays, approval stalls, and retry loops."""
+    from process_intelligence.service import process_intelligence_service
+    import json
+    try:
+        findings = process_intelligence_service.detect_bottlenecks(workflow_id)
+        return json.dumps({
+            "success": True,
+            "workflow_id": workflow_id,
+            "bottlenecks_detected": len(findings),
+            "findings": [
+                {
+                    "finding_id": f.finding_id,
+                    "component_id": f.component_id,
+                    "type": f.bottleneck_type.value,
+                    "severity": f.severity.value,
+                    "delay_sec": f.estimated_delay_sec,
+                    "recommended_action": f.recommended_action,
+                }
+                for f in findings
+            ],
+        }, indent=2)
+    except Exception as e:
+        return json.dumps({"success": False, "error": str(e)}, indent=2)
+
+@tool
+def generate_and_simulate_workflow_optimizations(
+    workflow_id: str,
+    version: int = 1,
+) -> str:
+    """Synthesizes optimization candidates from bottlenecks and runs digital-twin counterfactual simulations."""
+    from process_intelligence.service import process_intelligence_service
+    import json
+    try:
+        candidates = process_intelligence_service.generate_optimizations(workflow_id, version)
+        simulations = []
+        for c in candidates:
+            sim = process_intelligence_service.simulate_optimization(c.candidate_id)
+            simulations.append(sim)
+        return json.dumps({
+            "success": True,
+            "workflow_id": workflow_id,
+            "candidates_count": len(candidates),
+            "candidates": [
+                {
+                    "candidate_id": c.candidate_id,
+                    "type": c.optimization_type.value,
+                    "title": c.title,
+                    "speedup_pct": c.expected_time_reduction_pct,
+                }
+                for c in candidates
+            ],
+            "simulations": simulations,
+        }, indent=2)
+    except Exception as e:
+        return json.dumps({"success": False, "error": str(e)}, indent=2)
+
+@tool
+def execute_controlled_workflow_experiment(
+    candidate_id: str,
+    workflow_id: str,
+    observed_speedup: float,
+    current_error_rate: float,
+    latency_spike_pct: float = 0.0,
+) -> str:
+    """Runs a controlled rollout experiment and triggers automated rollback if guardrails are breached."""
+    from process_intelligence.service import process_intelligence_service
+    import json
+    try:
+        exp = process_intelligence_service.run_experiment(
+            candidate_id=candidate_id,
+            workflow_id=workflow_id,
+            observed_speedup=observed_speedup,
+            error_rate=current_error_rate,
+            latency_spike_pct=latency_spike_pct,
+        )
+        return json.dumps({
+            "success": True,
+            "experiment_id": exp.experiment_id,
+            "candidate_id": exp.candidate_id,
+            "status": exp.status.value,
+            "observed_improvement_pct": exp.observed_improvement_pct,
+            "is_guardrail_breached": exp.is_guardrail_breached,
+        }, indent=2)
+    except Exception as e:
+        return json.dumps({"success": False, "error": str(e)}, indent=2)
+
+@tool
+def authorize_workflow_change_governance(
+    workflow_id: str,
+    candidate_id: str,
+    from_version: int,
+    to_version: int,
+    approver: str,
+    approval_token: str,
+) -> str:
+    """Submits and authorizes a workflow revision requiring a mandatory Module 20 human approval token."""
+    from process_intelligence.service import process_intelligence_service
+    import json
+    try:
+        gov = process_intelligence_service.submit_and_approve_change(
+            workflow_id=workflow_id,
+            candidate_id=candidate_id,
+            from_version=from_version,
+            to_version=to_version,
+            approver=approver,
+            approval_token=approval_token,
+        )
+        return json.dumps({
+            "success": True,
+            "governance_id": gov.governance_id,
+            "workflow_id": gov.workflow_id,
+            "from_version": gov.from_version,
+            "to_version": gov.to_version,
+            "status": gov.change_status,
+            "approved_by": gov.approved_by,
+            "approval_token": gov.approval_token,
+        }, indent=2)
+    except Exception as e:
+        return json.dumps({"success": False, "error": str(e)}, indent=2)
+
 OMNIA_ALL_TOOLS = [
     register_render_farm_worker,
     submit_orchestrated_render_job,
@@ -5466,6 +5659,12 @@ OMNIA_ALL_TOOLS = [
     verify_goal_outcome_metric,
     assess_goal_health_and_progress,
     propose_and_approve_goal_remediation,
+    record_workflow_process_event,
+    reconstruct_and_analyze_workflow,
+    detect_workflow_bottlenecks,
+    generate_and_simulate_workflow_optimizations,
+    execute_controlled_workflow_experiment,
+    authorize_workflow_change_governance,
 ]
 
 # Backward compatibility alias
