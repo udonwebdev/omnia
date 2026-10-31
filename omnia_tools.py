@@ -4984,6 +4984,18 @@ def register_render_farm_worker(
     except Exception as e:
         return json.dumps({"success": False, "error": str(e)}, indent=2)
 
+@tool
+def get_render_farm_monitoring_overview(project_id: Optional[str] = None, role: str = "admin") -> str:
+    """Retrieves operational render farm metrics, queue performance, worker status, and active alerts."""
+    from video_studio.monitoring_service import render_monitoring_service
+    import json
+    try:
+        overview = render_monitoring_service.get_dashboard_overview(project_id=project_id, requesting_role=role)
+        return json.dumps({"success": True, "overview": overview}, indent=2)
+    except Exception as e:
+        return json.dumps({"success": False, "error": str(e)}, indent=2)
+
+
 
 
 # =============================================================================
@@ -5409,8 +5421,259 @@ def authorize_workflow_change_governance(
     except Exception as e:
         return json.dumps({"success": False, "error": str(e)}, indent=2)
 
+
+# --- Module 40: Autonomous Operations Center, System Observability & Incident Intelligence ---
+@tool
+def register_operations_service(
+    service_id: str,
+    service_name: str,
+    criticality: str = "TIER_1_CRITICAL",
+    owner_subsystem: str = "core",
+    dependencies: Optional[str] = None,
+    endpoints: Optional[str] = None,
+) -> str:
+    """Registers or updates a service in the unified operations service inventory."""
+    from operations_center.service import operations_center_service
+    from operations_center.models import ServiceCriticality
+    import json
+    try:
+        crit = ServiceCriticality[criticality.upper()] if criticality.upper() in ServiceCriticality.__members__ else ServiceCriticality.TIER_1_CRITICAL
+        dep_list = json.loads(dependencies) if dependencies and dependencies.startswith("[") else ([d.strip() for d in dependencies.split(",")] if dependencies else [])
+        ep_list = json.loads(endpoints) if endpoints and endpoints.startswith("[") else ([e.strip() for e in endpoints.split(",")] if endpoints else [])
+        rec = operations_center_service.register_service(
+            service_id=service_id,
+            service_name=service_name,
+            criticality=crit,
+            owner_subsystem=owner_subsystem,
+            dependencies=dep_list,
+            endpoints=ep_list,
+        )
+        return json.dumps({
+            "success": True,
+            "service_id": rec.service_id,
+            "service_name": rec.service_name,
+            "criticality": rec.criticality.value,
+            "dependencies": rec.dependencies,
+        }, indent=2)
+    except Exception as e:
+        return json.dumps({"success": False, "error": str(e)}, indent=2)
+
+@tool
+def record_service_health_observation(
+    service_id: str,
+    health_state: str = "HEALTHY",
+    check_type: str = "SYNTHETIC",
+    latency_ms: float = 10.0,
+    cpu_usage_pct: float = 15.0,
+    memory_usage_pct: float = 20.0,
+    issues: Optional[str] = None,
+) -> str:
+    """Records a fresh health observation for a service with latency and resource utilization."""
+    from operations_center.service import operations_center_service
+    from operations_center.models import SystemHealthState
+    import json
+    try:
+        state = SystemHealthState[health_state.upper()] if health_state.upper() in SystemHealthState.__members__ else SystemHealthState.HEALTHY
+        iss_list = json.loads(issues) if issues and issues.startswith("[") else ([i.strip() for i in issues.split(",")] if issues else [])
+        obs = operations_center_service.record_health_observation(
+            service_id=service_id,
+            health_state=state,
+            check_type=check_type,
+            latency_ms=latency_ms,
+            cpu_usage_pct=cpu_usage_pct,
+            memory_usage_pct=memory_usage_pct,
+            issues=iss_list,
+        )
+        return json.dumps({
+            "success": True,
+            "observation_id": obs.observation_id,
+            "service_id": obs.service_id,
+            "health_state": obs.health_state.value,
+            "latency_ms": obs.latency_ms,
+            "is_stale": obs.is_stale,
+        }, indent=2)
+    except Exception as e:
+        return json.dumps({"success": False, "error": str(e)}, indent=2)
+
+@tool
+def ingest_operations_telemetry(
+    telemetry_type: str,
+    service_id: str,
+    payload_json: str,
+) -> str:
+    """Ingests multi-tier telemetry into operations center with credential scrubbing."""
+    from operations_center.service import operations_center_service
+    import json
+    try:
+        data = json.loads(payload_json)
+        tt = telemetry_type.lower()
+        if tt == "metric":
+            rec = operations_center_service.ingest_metric(
+                metric_name=data.get("metric_name", "metric"),
+                metric_value=float(data.get("metric_value", 0.0)),
+                service_id=service_id,
+                unit=data.get("unit", "count"),
+                dimensions=data.get("dimensions"),
+            )
+            return json.dumps({"success": True, "record_id": rec.metric_id, "type": "metric"}, indent=2)
+        elif tt == "log":
+            rec = operations_center_service.ingest_log(
+                level=data.get("level", "INFO"),
+                message=data.get("message", ""),
+                service_id=service_id,
+                context=data.get("context"),
+            )
+            return json.dumps({"success": True, "record_id": rec.log_id, "type": "log", "scrubbed_message": rec.message}, indent=2)
+        elif tt == "trace_span":
+            rec = operations_center_service.ingest_trace_span(
+                trace_id=data.get("trace_id", "trace-1"),
+                span_id=data.get("span_id", "span-1"),
+                operation_name=data.get("operation_name", "op"),
+                service_id=service_id,
+                duration_ms=float(data.get("duration_ms", 5.0)),
+                parent_span_id=data.get("parent_span_id"),
+                status_code=data.get("status_code", "OK"),
+                tags=data.get("tags"),
+            )
+            return json.dumps({"success": True, "record_id": rec.span_id, "type": "trace_span"}, indent=2)
+        else:
+            return json.dumps({"success": False, "error": f"Unsupported telemetry type: {telemetry_type}"}, indent=2)
+    except Exception as e:
+        return json.dumps({"success": False, "error": str(e)}, indent=2)
+
+@tool
+def evaluate_service_slo(
+    slo_id: str,
+    sli_current_percent: float,
+    budget_remaining_percent: float,
+    burn_rate_30d: float,
+) -> str:
+    """Updates and evaluates a service level objective with error budget consumption."""
+    from operations_center.service import operations_center_service
+    import json
+    try:
+        slo = operations_center_service.update_slo_metrics(
+            slo_id=slo_id,
+            sli_current_percent=sli_current_percent,
+            budget_remaining_percent=budget_remaining_percent,
+            burn_rate_30d=burn_rate_30d,
+        )
+        if not slo:
+            return json.dumps({"success": False, "error": f"SLO {slo_id} not found."})
+        return json.dumps({
+            "success": True,
+            "slo_id": slo.slo_id,
+            "service_id": slo.service_id,
+            "target_sli_percent": slo.target_sli_percent,
+            "sli_current_percent": slo.sli_current_percent,
+            "budget_remaining_percent": slo.budget_remaining_percent,
+            "burn_rate_30d": slo.burn_rate_30d,
+        }, indent=2)
+    except Exception as e:
+        return json.dumps({"success": False, "error": str(e)}, indent=2)
+
+@tool
+def detect_and_correlate_incidents(
+    alert_name: str,
+    service_id: str,
+    severity: str = "SEV_2",
+    description: str = "",
+    metric_name: Optional[str] = None,
+    metric_value: Optional[float] = None,
+    threshold_value: Optional[float] = None,
+) -> str:
+    """Raises an alert and automatically correlates it with active incidents across the service graph."""
+    from operations_center.service import operations_center_service
+    from operations_center.models import IncidentSeverity
+    import json
+    try:
+        sev = IncidentSeverity[severity.upper()] if severity.upper() in IncidentSeverity.__members__ else IncidentSeverity.SEV_2
+        alert = operations_center_service.raise_alert(
+            alert_name=alert_name,
+            service_id=service_id,
+            severity=sev,
+            description=description,
+            metric_name=metric_name,
+            metric_value=metric_value,
+            threshold_value=threshold_value,
+        )
+        correlated_incidents = operations_center_service.correlate_active_alerts()
+        return json.dumps({
+            "success": True,
+            "alert_id": alert.alert_id,
+            "assigned_incident_id": alert.incident_id,
+            "total_correlated_incidents": len(correlated_incidents),
+            "incidents": [
+                {
+                    "incident_id": inc.incident_id,
+                    "title": inc.title,
+                    "severity": inc.severity.value,
+                    "lifecycle_state": inc.lifecycle_state.value,
+                }
+                for inc in correlated_incidents
+            ],
+        }, indent=2)
+    except Exception as e:
+        return json.dumps({"success": False, "error": str(e)}, indent=2)
+
+@tool
+def investigate_and_recover_incident(
+    incident_id: str,
+    execute_proposal_id: Optional[str] = None,
+    approval_token: Optional[str] = None,
+) -> str:
+    """Investigates root cause, assesses blast radius, generates recovery proposals, or executes an approved recovery."""
+    from operations_center.service import operations_center_service
+    import json
+    try:
+        if execute_proposal_id:
+            result = operations_center_service.execute_recovery_action(
+                proposal_id=execute_proposal_id,
+                approval_token=approval_token,
+            )
+            return json.dumps({"success": True, "execution_result": result}, indent=2)
+
+        root_cause = operations_center_service.investigate_root_cause(incident_id)
+        impact = operations_center_service.assess_impact(incident_id)
+        proposals = operations_center_service.generate_recovery_proposals(incident_id)
+
+        return json.dumps({
+            "success": True,
+            "incident_id": incident_id,
+            "root_cause": {
+                "category": root_cause.category if root_cause else None,
+                "summary": root_cause.summary if root_cause else None,
+                "confidence": root_cause.confidence_score if root_cause else 0.0,
+            } if root_cause else None,
+            "impact": {
+                "blast_radius": impact.blast_radius_level if impact else None,
+                "impacted_services": impact.impacted_services if impact else [],
+                "user_disruption": impact.user_facing_disruption if impact else False,
+            } if impact else None,
+            "proposals": [
+                {
+                    "proposal_id": p.proposal_id,
+                    "action_type": p.action_type,
+                    "description": p.description,
+                    "execution_target": p.execution_target,
+                    "status": p.status.value,
+                }
+                for p in proposals
+            ],
+        }, indent=2)
+    except Exception as e:
+        return json.dumps({"success": False, "error": str(e)}, indent=2)
+
 OMNIA_ALL_TOOLS = [
+    register_operations_service,
+    record_service_health_observation,
+    ingest_operations_telemetry,
+    evaluate_service_slo,
+    detect_and_correlate_incidents,
+    investigate_and_recover_incident,
+
     register_render_farm_worker,
+    get_render_farm_monitoring_overview,
     submit_orchestrated_render_job,
     execute_online_media_conform,
     relink_project_media_asset,

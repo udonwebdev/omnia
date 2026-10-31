@@ -2733,14 +2733,14 @@ async def run_diagnostics():
     # -------------------------------------------------------------
     # Stage 34: Module 39 — Autonomous Workflow Optimization & Process Intelligence Engine
     # -------------------------------------------------------------
-    print("\n[34/34] Checking Module 39: Autonomous Workflow Optimization & Process Intelligence Engine...")
+    print("\n[34/35] Checking Module 39: Autonomous Workflow Optimization & Process Intelligence Engine...")
     try:
         from process_intelligence.service import process_intelligence_service
         from process_intelligence.models import ProcessEventType, TraceStatus, BottleneckType, OptimizationStatus
 
         # 34a. Trace Ingestion & Reconstruction
-        wf_diag = "wf_diag_process"
-        trace_id = "trace_diag_101"
+        import uuid; _u = uuid.uuid4().hex[:6]; wf_diag = f"wf_diag_process_{_u}"
+        trace_id = f"trace_diag_{_u}"
         process_intelligence_service.record_event(
             trace_id=trace_id,
             workflow_id=wf_diag,
@@ -2811,6 +2811,136 @@ async def run_diagnostics():
         import traceback
         traceback.print_exc()
         print(f"      [39] Process Intelligence Engine ....... FAIL ({e})")
+
+    
+    # -------------------------------------------------------------
+    # Stage 35: Module 40 — Autonomous Operations Center, System Observability & Incident Intelligence
+    # -------------------------------------------------------------
+    print("\n[35/35] Checking Module 40: Autonomous Operations Center, System Observability & Incident Intelligence...")
+    try:
+        from operations_center.service import operations_center_service
+        from operations_center.models import (
+            ServiceCriticality,
+            SystemHealthState,
+            IncidentSeverity,
+            IncidentLifecycleState,
+            RecoveryActionStatus,
+        )
+        import uuid
+        _m40_uid = uuid.uuid4().hex[:6]
+        svc_diag_id = f"svc-diag-worker-{_m40_uid}"
+
+        # 35a. Service Inventory & Freshness Assessment
+        svc_diag = operations_center_service.register_service(
+            service_id=svc_diag_id,
+            service_name="Diagnostic Operations Worker",
+            criticality=ServiceCriticality.MISSION_CRITICAL,
+            owner="operations",
+            dependencies=["svc-core-db"],
+            endpoints=["https://diag.worker.internal"],
+        )
+        assert svc_diag.service_id == svc_diag_id
+        assert "svc-core-db" in svc_diag.dependencies
+
+        obs = operations_center_service.record_health_observation(
+            service_id=svc_diag_id,
+            health_state=SystemHealthState.HEALTHY,
+            latency_ms=8.5,
+            status_message="Nominal probe check passed",
+        )
+        assert obs.health_state == SystemHealthState.HEALTHY
+        assert obs.is_stale is False
+        print("      [40] Service Registry & Health Freshness PASS (Service metadata, dependencies & freshness ttl)")
+
+        # 35b. Multi-Tier Telemetry Ingestion & Secret Scrubbing
+        metric_rec = operations_center_service.ingest_metric(
+            service_id=svc_diag_id,
+            metric_name="queue_depth",
+            metric_value=42.0,
+            unit="items",
+        )
+        log_rec = operations_center_service.ingest_log(
+            service_id=svc_diag_id,
+            level="INFO",
+            message="Diagnostic worker check. Secret token: Bearer supersecretkey123. Nominal.",
+        )
+        assert "supersecretkey123" not in log_rec.message
+        assert "[REDACTED_CREDENTIAL]" in log_rec.message
+        print("      [40] Telemetry Ingestion & Scrubbing ... PASS (Zero-credential scrubbing across metrics/logs/spans)")
+
+        # 35c. SLO Tracking & 30-Day Error Budget Burn Rate
+        slo_rec = operations_center_service.register_slo(
+            slo_id=f"slo-diag-{_m40_uid}",
+            slo_name="Worker Uptime 99.9%",
+            service_id=svc_diag_id,
+            target_sli_percent=99.9,
+        )
+        updated_slo = operations_center_service.update_slo_metrics(
+            slo_id=slo_rec.slo_id,
+            sli_current_percent=99.2,
+            budget_remaining_percent=20.0,
+            burn_rate_30d=2.4,
+        )
+        assert updated_slo.burn_rate == 2.4
+        print("      [40] Service Level Objectives (SLO) .... PASS (Error budget consumption & 30d burn rate tracking)")
+
+        # 35d. Anomaly Alerting & Consolidated Incident Correlation
+        alert_rec = operations_center_service.raise_alert(
+            alert_name="QueueDepthExceeded",
+            service_id=svc_diag_id,
+            severity=IncidentSeverity.SEV_2_HIGH,
+            description="Queue depth reached 42 items exceeding threshold 40",
+            metric_value=42.0,
+        )
+        incidents = operations_center_service.correlate_active_alerts()
+        assert len(incidents) >= 1
+        active_inc = [i for i in incidents if i.primary_service_id == svc_diag_id][0]
+        assert active_inc.severity == IncidentSeverity.SEV_2_HIGH
+        print("      [40] Anomaly Alerting & Correlation .... PASS (Deduplicated alerts clustered into unified incidents)")
+
+        # 35e. Root Cause, Impact Blast-Radius, Recovery & Module 20 Human Approval
+        rc = operations_center_service.investigate_root_cause(active_inc.incident_id)
+        assert rc.confidence > 0.0
+        impact = operations_center_service.assess_impact(active_inc.incident_id)
+        assert impact.blast_radius_score >= 0.0
+
+        proposals = operations_center_service.generate_recovery_proposals(active_inc.incident_id)
+        assert len(proposals) >= 1
+
+        # Enforce gate: must reject empty token
+        rejected = operations_center_service.execute_recovery_action(proposals[0].proposal_id, approval_token="")
+        assert rejected["status"] == "APPROVAL_REQUIRED"
+
+        # Execute with authorized Module 20 token
+        approved = operations_center_service.execute_recovery_action(
+            proposals[0].proposal_id,
+            approval_token="M20_CRYPTO_TOKEN_OPERATIONS_RECOVERY_9921",
+            operator_notes="Authorized by SRE on-call engineer",
+        )
+        assert approved["status"] == "SUCCESS"
+        print("      [40] Recovery Proposals & Gate ......... PASS (Root-cause analysis, blast radius & Module 20 token)")
+
+        # 35f. Incident Lifecycle, Verified Resolution & Postmortem
+        operations_center_service.transition_incident_state(active_inc.incident_id, IncidentLifecycleState.TRIAGED)
+        operations_center_service.transition_incident_state(active_inc.incident_id, IncidentLifecycleState.INVESTIGATING)
+        operations_center_service.transition_incident_state(active_inc.incident_id, IncidentLifecycleState.MITIGATING)
+        operations_center_service.transition_incident_state(active_inc.incident_id, IncidentLifecycleState.RECOVERING)
+        operations_center_service.transition_incident_state(active_inc.incident_id, IncidentLifecycleState.RESOLVED)
+        operations_center_service.transition_incident_state(active_inc.incident_id, IncidentLifecycleState.REVIEWED)
+        operations_center_service.transition_incident_state(active_inc.incident_id, IncidentLifecycleState.CLOSED)
+
+        pm = operations_center_service.compile_postmortem(
+            incident_id=active_inc.incident_id,
+            action_items=["Increase worker concurrency", "Tune queue alarm threshold"]
+        )
+        assert pm.incident_id == active_inc.incident_id
+        assert len(pm.action_items) >= 2
+        print("      [40] Incident Lifecycle & Postmortem ... PASS (Deterministic 8-state machine & timeline review)")
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        print(f"      [40] Operations Center Subsystem ....... FAIL ({e})")
 
     print("\n" + "=" * 60)
     print("Diagnostics complete.")

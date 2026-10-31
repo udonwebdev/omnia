@@ -7,7 +7,7 @@ from typing import List, Tuple
 
 logger = logging.getLogger("Omnia.Persistence.Migrations")
 
-CURRENT_SCHEMA_VERSION = 24
+CURRENT_SCHEMA_VERSION = 25
 
 MIGRATION_V1 = """
 -- Schema Version 1: Durable Task Graph & Crash Recovery Tables
@@ -2638,6 +2638,188 @@ CREATE TABLE IF NOT EXISTS proc_change_governance (
 CREATE INDEX IF NOT EXISTS idx_proc_gov_workflow ON proc_change_governance(workflow_id);
 """
 
+
+MIGRATION_V25 = """
+-- Schema Version 25: Autonomous Operations Center, System Observability & Incident Intelligence
+
+CREATE TABLE IF NOT EXISTS ops_service_inventory (
+    service_id TEXT PRIMARY KEY,
+    service_name TEXT NOT NULL,
+    description TEXT NOT NULL,
+    version TEXT NOT NULL,
+    environment TEXT NOT NULL,
+    owner TEXT NOT NULL,
+    criticality TEXT NOT NULL,
+    health_endpoint TEXT,
+    dependencies_json TEXT NOT NULL DEFAULT '[]',
+    current_state TEXT NOT NULL DEFAULT 'UNKNOWN',
+    last_observed_at TEXT,
+    created_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_ops_svc_owner ON ops_service_inventory(owner);
+CREATE INDEX IF NOT EXISTS idx_ops_svc_crit ON ops_service_inventory(criticality);
+
+CREATE TABLE IF NOT EXISTS ops_health_observations (
+    observation_id TEXT PRIMARY KEY,
+    service_id TEXT NOT NULL,
+    health_state TEXT NOT NULL,
+    latency_ms REAL NOT NULL DEFAULT 0.0,
+    error_rate REAL NOT NULL DEFAULT 0.0,
+    status_message TEXT NOT NULL,
+    observed_at TEXT NOT NULL,
+    is_stale INTEGER NOT NULL DEFAULT 0,
+    FOREIGN KEY (service_id) REFERENCES ops_service_inventory(service_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_ops_obs_svc ON ops_health_observations(service_id);
+CREATE INDEX IF NOT EXISTS idx_ops_obs_time ON ops_health_observations(observed_at);
+
+CREATE TABLE IF NOT EXISTS ops_telemetry_metrics (
+    metric_id TEXT PRIMARY KEY,
+    service_id TEXT NOT NULL,
+    metric_name TEXT NOT NULL,
+    value REAL NOT NULL,
+    unit TEXT NOT NULL,
+    timestamp TEXT NOT NULL,
+    FOREIGN KEY (service_id) REFERENCES ops_service_inventory(service_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_ops_met_svc ON ops_telemetry_metrics(service_id, metric_name);
+
+CREATE TABLE IF NOT EXISTS ops_telemetry_logs (
+    log_id TEXT PRIMARY KEY,
+    service_id TEXT NOT NULL,
+    level TEXT NOT NULL,
+    message TEXT NOT NULL,
+    error_category TEXT,
+    timestamp TEXT NOT NULL,
+    FOREIGN KEY (service_id) REFERENCES ops_service_inventory(service_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_ops_log_svc ON ops_telemetry_logs(service_id);
+
+CREATE TABLE IF NOT EXISTS ops_telemetry_spans (
+    span_id TEXT PRIMARY KEY,
+    trace_id TEXT NOT NULL,
+    service_id TEXT NOT NULL,
+    operation_name TEXT NOT NULL,
+    duration_ms REAL NOT NULL,
+    status_code INTEGER NOT NULL DEFAULT 200,
+    parent_span_id TEXT,
+    timestamp TEXT NOT NULL,
+    FOREIGN KEY (service_id) REFERENCES ops_service_inventory(service_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_ops_span_trace ON ops_telemetry_spans(trace_id);
+
+CREATE TABLE IF NOT EXISTS ops_slo_definitions (
+    slo_id TEXT PRIMARY KEY,
+    service_id TEXT NOT NULL,
+    name TEXT NOT NULL,
+    target_pct REAL NOT NULL,
+    current_sli_pct REAL NOT NULL DEFAULT 100.0,
+    error_budget_remaining_pct REAL NOT NULL DEFAULT 100.0,
+    burn_rate REAL NOT NULL DEFAULT 0.0,
+    assessed_at TEXT NOT NULL,
+    FOREIGN KEY (service_id) REFERENCES ops_service_inventory(service_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_ops_slo_svc ON ops_slo_definitions(service_id);
+
+CREATE TABLE IF NOT EXISTS ops_incident_alerts (
+    alert_id TEXT PRIMARY KEY,
+    service_id TEXT NOT NULL,
+    alert_name TEXT NOT NULL,
+    severity TEXT NOT NULL,
+    symptom_description TEXT NOT NULL,
+    supporting_metric_value REAL NOT NULL DEFAULT 0.0,
+    correlated_incident_id TEXT,
+    detected_at TEXT NOT NULL,
+    FOREIGN KEY (service_id) REFERENCES ops_service_inventory(service_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_ops_alert_corr ON ops_incident_alerts(correlated_incident_id);
+
+CREATE TABLE IF NOT EXISTS ops_incidents (
+    incident_id TEXT PRIMARY KEY,
+    title TEXT NOT NULL,
+    severity TEXT NOT NULL,
+    state TEXT NOT NULL,
+    primary_service_id TEXT NOT NULL,
+    affected_services_json TEXT NOT NULL DEFAULT '[]',
+    correlated_alert_ids_json TEXT NOT NULL DEFAULT '[]',
+    assigned_to TEXT,
+    created_at TEXT NOT NULL,
+    resolved_at TEXT,
+    FOREIGN KEY (primary_service_id) REFERENCES ops_service_inventory(service_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_ops_inc_state ON ops_incidents(state);
+CREATE INDEX IF NOT EXISTS idx_ops_inc_sev ON ops_incidents(severity);
+
+CREATE TABLE IF NOT EXISTS ops_root_cause_findings (
+    finding_id TEXT PRIMARY KEY,
+    incident_id TEXT NOT NULL,
+    candidate_cause TEXT NOT NULL,
+    confidence REAL NOT NULL,
+    supporting_evidence_json TEXT NOT NULL DEFAULT '[]',
+    contradictory_evidence_json TEXT NOT NULL DEFAULT '[]',
+    investigated_at TEXT NOT NULL,
+    FOREIGN KEY (incident_id) REFERENCES ops_incidents(incident_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_ops_rc_inc ON ops_root_cause_findings(incident_id);
+
+CREATE TABLE IF NOT EXISTS ops_impact_assessments (
+    assessment_id TEXT PRIMARY KEY,
+    incident_id TEXT NOT NULL,
+    blast_radius_score REAL NOT NULL,
+    affected_workflows_json TEXT NOT NULL DEFAULT '[]',
+    data_integrity_risk TEXT NOT NULL DEFAULT 'LOW',
+    operational_disruption TEXT NOT NULL DEFAULT 'LOW',
+    financial_exposure_estimate REAL NOT NULL DEFAULT 0.0,
+    assessed_at TEXT NOT NULL,
+    FOREIGN KEY (incident_id) REFERENCES ops_incidents(incident_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_ops_imp_inc ON ops_impact_assessments(incident_id);
+
+CREATE TABLE IF NOT EXISTS ops_recovery_proposals (
+    proposal_id TEXT PRIMARY KEY,
+    incident_id TEXT NOT NULL,
+    target_service_id TEXT NOT NULL,
+    action_name TEXT NOT NULL,
+    rationale TEXT NOT NULL,
+    expected_benefit TEXT NOT NULL,
+    risk_level TEXT NOT NULL,
+    requires_human_approval INTEGER NOT NULL DEFAULT 1,
+    status TEXT NOT NULL DEFAULT 'PROPOSED',
+    approval_token TEXT,
+    approved_by TEXT,
+    created_at TEXT NOT NULL,
+    FOREIGN KEY (incident_id) REFERENCES ops_incidents(incident_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_ops_rec_inc ON ops_recovery_proposals(incident_id);
+
+CREATE TABLE IF NOT EXISTS ops_postmortem_reports (
+    report_id TEXT PRIMARY KEY,
+    incident_id TEXT NOT NULL,
+    title TEXT NOT NULL,
+    summary TEXT NOT NULL,
+    root_cause TEXT NOT NULL,
+    timeline_events_json TEXT NOT NULL DEFAULT '[]',
+    what_went_well_json TEXT NOT NULL DEFAULT '[]',
+    what_failed_json TEXT NOT NULL DEFAULT '[]',
+    action_items_json TEXT NOT NULL DEFAULT '[]',
+    published_at TEXT NOT NULL,
+    FOREIGN KEY (incident_id) REFERENCES ops_incidents(incident_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_ops_pm_inc ON ops_postmortem_reports(incident_id);
+"""
+
 def backup_database(db_path: str, backup_dir: str = "persistence_backups") -> str:
     """Creates a timestamped snapshot of the SQLite database prior to any schema modification."""
     if not os.path.exists(db_path):
@@ -2937,6 +3119,17 @@ def apply_migrations(db_path: str) -> int:
             conn.commit()
             logger.info("Migration v24 applied successfully.")
             current_version = 24
+
+        if current_version < 25:
+            logger.info("Applying Migration v25 (Autonomous Operations Center & Incident Intelligence Tables)...")
+            cursor.executescript(MIGRATION_V25)
+            cursor.execute(
+                "INSERT INTO schema_migrations (version, applied_at, description) VALUES (?, ?, ?)",
+                (25, time.time(), "Autonomous Operations Center, System Observability & Incident Intelligence Engine tables")
+            )
+            conn.commit()
+            logger.info("Migration v25 applied successfully.")
+            current_version = 25
 
         return current_version
     except Exception as e:
