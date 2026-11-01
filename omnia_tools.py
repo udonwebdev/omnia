@@ -6827,7 +6827,216 @@ def verify_security_fix_resolution(
         return json.dumps({"success": False, "error": str(e)}, indent=2)
 
 
+# ----------------------------------------------------------------------
+# Module 47: Autonomous Threat Detection & Security Operations Tools
+# ----------------------------------------------------------------------
+
+@tool
+def register_security_telemetry_source(
+    provider: str,
+    environment: str,
+    collection_method: str = "API_POLL",
+    auth_method: str = "TOKEN",
+    asset_scope_json: str = "[]",
+    event_types_json: str = "[]",
+) -> str:
+    """Registers an authorized telemetry feed (Identity, API, Cloud Audit, Workload) in the SOC inventory."""
+    from secops.service import secops_service
+    import json
+    try:
+        src = secops_service.source_registry.register_source(
+            provider=provider,
+            environment=environment,
+            collection_method=collection_method,
+            auth_method=auth_method,
+            asset_scope=json.loads(asset_scope_json),
+            event_types_supported=json.loads(event_types_json),
+        )
+        return json.dumps({
+            "success": True,
+            "source_id": src.source_id,
+            "provider": src.provider,
+            "environment": src.environment,
+            "health_status": src.health_status,
+        }, indent=2)
+    except Exception as e:
+        return json.dumps({"success": False, "error": str(e)}, indent=2)
+
+
+@tool
+def ingest_and_evaluate_security_telemetry(
+    source_id: str,
+    provider: str,
+    raw_payload_json: str,
+    environment: str = "PRODUCTION",
+) -> str:
+    """Ingests raw security event, normalizes payload, updates behavioral baselines, and executes detection rules."""
+    from secops.service import secops_service
+    import json
+    try:
+        raw_payload = json.loads(raw_payload_json)
+        alerts = secops_service.ingest_and_detect(
+            source_id=source_id,
+            provider=provider,
+            raw_payload=raw_payload,
+            environment=environment,
+        )
+        return json.dumps({
+            "success": True,
+            "alerts_generated_count": len(alerts),
+            "alert_ids": [a.alert_id for a in alerts],
+            "highest_severity": max([a.severity.value for a in alerts]) if alerts else "NONE",
+        }, indent=2)
+    except Exception as e:
+        return json.dumps({"success": False, "error": str(e)}, indent=2)
+
+
+@tool
+def execute_scoped_threat_hunt(
+    operator: str,
+    asset_id: Optional[str] = None,
+    actor_id: Optional[str] = None,
+    event_type: Optional[str] = None,
+    limit: int = 50,
+) -> str:
+    """Performs read-only, bounded threat hunting queries over authorized security telemetry."""
+    from secops.service import secops_service
+    import json
+    try:
+        events = secops_service.hunter.hunt_telemetry(
+            analyst_operator=operator,
+            asset_id=asset_id,
+            actor_id=actor_id,
+            event_type=event_type,
+            limit=limit,
+        )
+        return json.dumps({
+            "success": True,
+            "events_retrieved": len(events),
+            "event_ids": [e.event_id for e in events],
+            "sample_events": [
+                {"id": e.event_id, "type": e.event_type, "actor": e.actor_id, "result": e.result.value}
+                for e in events[:5]
+            ],
+        }, indent=2)
+    except Exception as e:
+        return json.dumps({"success": False, "error": str(e)}, indent=2)
+
+
+@tool
+def correlate_security_incidents(
+    entity_id: str,
+    correlation_title: str = "Correlated Multi-Stage Incident",
+) -> str:
+    """Correlates multiple security alerts across time and shared entities to construct an attack sequence graph."""
+    from secops.service import secops_service
+    import json
+    try:
+        with secops_service.repo._get_connection() as conn:
+            rows = conn.execute("SELECT * FROM soc_alerts WHERE status IN ('NEW', 'TRIAGED', 'INVESTIGATING')").fetchall()
+            alerts = [secops_service.repo.get_alert(r["alert_id"]) for r in rows if r["alert_id"]]
+            alerts = [a for a in alerts if a is not None]
+
+        graph = secops_service.correlation_engine.correlate_alerts_by_entity(
+            alerts=alerts,
+            entity_id=entity_id,
+            correlation_title=correlation_title,
+        )
+        if not graph:
+            return json.dumps({"success": False, "message": f"No multi-alert correlation identified for {entity_id}"}, indent=2)
+
+        return json.dumps({
+            "success": True,
+            "correlation_id": graph.correlation_id,
+            "title": graph.correlation_title,
+            "participating_alerts": graph.participating_alert_ids,
+            "confidence": graph.correlation_confidence,
+            "attack_sequence_steps": len(graph.attack_chain_sequence),
+        }, indent=2)
+    except Exception as e:
+        return json.dumps({"success": False, "error": str(e)}, indent=2)
+
+
+@tool
+def plan_and_execute_defensive_containment(
+    incident_id: str,
+    action_type: str,
+    target_identifier: str,
+    justification: str,
+    operator: str,
+    approval_token: Optional[str] = None,
+    operational_risk: str = "LOW",
+) -> str:
+    """Proposes defensive containment and executes via authorized adapters under strict Module 20 policy gating."""
+    from secops.service import secops_service
+    from secops.models import ResponseActionType, OperationalRisk
+    import json
+    try:
+        action = ResponseActionType(action_type.upper())
+        risk = OperationalRisk(operational_risk.upper())
+
+        plan = secops_service.response_planner.generate_response_plan(
+            incident_id=incident_id,
+            action_type=action,
+            target_identifier=target_identifier,
+            justification=justification,
+            operational_risk=risk,
+        )
+
+        record = secops_service.containment_gateway.execute_containment(
+            plan_id=plan.plan_id,
+            operator=operator,
+            approval_token=approval_token,
+        )
+
+        return json.dumps({
+            "success": True,
+            "containment_action_id": record.action_id,
+            "plan_id": plan.plan_id,
+            "incident_id": incident_id,
+            "action_type": record.action_type,
+            "status": record.status,
+            "execution_result": record.execution_result,
+        }, indent=2)
+    except Exception as e:
+        return json.dumps({"success": False, "error": str(e)}, indent=2)
+
+
+@tool
+def seal_security_evidence_package(
+    incident_id: str,
+    sealed_by: str,
+    investigation_id: Optional[str] = None,
+) -> str:
+    """Cryptographically binds incident events, timelines, and findings into an immutable SHA-256 evidence package."""
+    from secops.service import secops_service
+    import json
+    try:
+        pkg = secops_service.evidence_engine.seal_incident_evidence_package(
+            incident_id=incident_id,
+            sealed_by=sealed_by,
+            investigation_id=investigation_id,
+        )
+        return json.dumps({
+            "success": True,
+            "package_id": pkg.package_id,
+            "incident_id": pkg.incident_id,
+            "package_digest_sha256": pkg.package_digest_sha256,
+            "sealed_at": pkg.sealed_at,
+            "sealed_by": pkg.sealed_by,
+        }, indent=2)
+    except Exception as e:
+        return json.dumps({"success": False, "error": str(e)}, indent=2)
+
+
 OMNIA_ALL_TOOLS = [
+    register_security_telemetry_source,
+    ingest_and_evaluate_security_telemetry,
+    execute_scoped_threat_hunt,
+    correlate_security_incidents,
+    plan_and_execute_defensive_containment,
+    seal_security_evidence_package,
+
     analyze_source_revision_and_impact,
     plan_and_execute_delivery_pipeline,
     evaluate_delivery_quality_and_security,

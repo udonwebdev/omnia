@@ -7,7 +7,7 @@ from typing import List, Tuple
 
 logger = logging.getLogger("Omnia.Persistence.Migrations")
 
-CURRENT_SCHEMA_VERSION = 31
+CURRENT_SCHEMA_VERSION = 32
 
 MIGRATION_V1 = """
 -- Schema Version 1: Durable Task Graph & Crash Recovery Tables
@@ -4006,6 +4006,257 @@ CREATE TABLE IF NOT EXISTS sec_audit_records (
 """
 
 
+MIGRATION_V32 = """
+-- Schema Version 32: Autonomous Threat Detection, Behavioral Analytics & Real-Time Security Operations Intelligence (Module 47)
+
+CREATE TABLE IF NOT EXISTS soc_telemetry_sources (
+    source_id TEXT PRIMARY KEY,
+    provider TEXT NOT NULL,
+    environment TEXT NOT NULL,
+    asset_scope_json TEXT DEFAULT '[]',
+    event_types_supported_json TEXT DEFAULT '[]',
+    collection_method TEXT NOT NULL,
+    auth_method TEXT NOT NULL,
+    last_successful_ingestion TEXT,
+    health_status TEXT NOT NULL DEFAULT 'HEALTHY',
+    retention_days INTEGER DEFAULT 90,
+    coverage_limitations_json TEXT DEFAULT '[]',
+    registered_at TEXT NOT NULL,
+    metadata_json TEXT DEFAULT '{}'
+);
+
+CREATE TABLE IF NOT EXISTS soc_security_events (
+    event_id TEXT PRIMARY KEY,
+    source_id TEXT NOT NULL,
+    provider TEXT NOT NULL,
+    event_type TEXT NOT NULL,
+    event_category TEXT NOT NULL, -- IDENTITY, API, WORKLOAD, NETWORK, CONFIG, CLOUD
+    event_timestamp TEXT NOT NULL,
+    ingestion_timestamp TEXT NOT NULL,
+    environment TEXT NOT NULL,
+    asset_id TEXT,
+    actor_id TEXT,
+    target_id TEXT,
+    source_address TEXT,
+    destination_address TEXT,
+    action TEXT NOT NULL,
+    result TEXT NOT NULL, -- SUCCESS, FAILURE, BLOCKED, UNKNOWN
+    severity TEXT NOT NULL DEFAULT 'INFO',
+    confidence REAL DEFAULT 1.0,
+    metadata_json TEXT DEFAULT '{}',
+    correlation_ids_json TEXT DEFAULT '[]',
+    raw_payload_hash TEXT NOT NULL,
+    quarantine_reason TEXT,
+    is_quarantined INTEGER DEFAULT 0,
+    FOREIGN KEY(source_id) REFERENCES soc_telemetry_sources(source_id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_soc_events_timestamp ON soc_security_events(event_timestamp);
+CREATE INDEX IF NOT EXISTS idx_soc_events_actor ON soc_security_events(actor_id);
+CREATE INDEX IF NOT EXISTS idx_soc_events_asset ON soc_security_events(asset_id);
+CREATE INDEX IF NOT EXISTS idx_soc_events_type ON soc_security_events(event_type);
+
+CREATE TABLE IF NOT EXISTS soc_behavioral_baselines (
+    baseline_id TEXT PRIMARY KEY,
+    entity_id TEXT NOT NULL,
+    entity_type TEXT NOT NULL, -- USER, SERVICE_ACCOUNT, API_CLIENT, WORKLOAD, ASSET
+    metric_name TEXT NOT NULL,
+    rolling_mean REAL NOT NULL DEFAULT 0.0,
+    rolling_stddev REAL NOT NULL DEFAULT 0.0,
+    sample_count INTEGER NOT NULL DEFAULT 0,
+    confidence_level REAL NOT NULL DEFAULT 0.1, -- 0.0 to 1.0
+    status TEXT NOT NULL DEFAULT 'COLD_START', -- COLD_START, LEARNING, ESTABLISHED, EXPIRED
+    seasonality_model_json TEXT DEFAULT '{}',
+    first_seen_at TEXT NOT NULL,
+    last_updated_at TEXT NOT NULL,
+    UNIQUE(entity_id, metric_name)
+);
+
+CREATE TABLE IF NOT EXISTS soc_baseline_snapshots (
+    snapshot_id TEXT PRIMARY KEY,
+    baseline_id TEXT NOT NULL,
+    version INTEGER NOT NULL,
+    snapshot_data_json TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    FOREIGN KEY(baseline_id) REFERENCES soc_behavioral_baselines(baseline_id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS soc_detection_rules (
+    rule_id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    description TEXT NOT NULL,
+    rule_type TEXT NOT NULL, -- DETERMINISTIC, ANOMALY, MODEL_ASSISTED
+    required_telemetry_sources_json TEXT DEFAULT '[]',
+    severity TEXT NOT NULL DEFAULT 'MEDIUM',
+    confidence_score REAL DEFAULT 0.8,
+    threshold_params_json TEXT DEFAULT '{}',
+    suppression_conditions_json TEXT DEFAULT '[]',
+    mitre_attack_technique TEXT,
+    version INTEGER NOT NULL DEFAULT 1,
+    is_enabled INTEGER DEFAULT 1,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS soc_rule_executions (
+    execution_id TEXT PRIMARY KEY,
+    rule_id TEXT NOT NULL,
+    matched_event_ids_json TEXT DEFAULT '[]',
+    findings_count INTEGER DEFAULT 0,
+    execution_duration_ms REAL DEFAULT 0.0,
+    executed_at TEXT NOT NULL,
+    FOREIGN KEY(rule_id) REFERENCES soc_detection_rules(rule_id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS soc_alerts (
+    alert_id TEXT PRIMARY KEY,
+    rule_id TEXT NOT NULL,
+    title TEXT NOT NULL,
+    description TEXT NOT NULL,
+    severity TEXT NOT NULL DEFAULT 'MEDIUM',
+    confidence REAL DEFAULT 0.8,
+    asset_id TEXT,
+    actor_id TEXT,
+    status TEXT NOT NULL DEFAULT 'NEW', -- NEW, TRIAGED, INVESTIGATING, CONFIRMED, FALSE_POSITIVE, RESOLVED
+    dedup_key TEXT NOT NULL,
+    contributing_event_ids_json TEXT DEFAULT '[]',
+    explanation_json TEXT DEFAULT '{}',
+    suppression_expires_at TEXT,
+    assigned_to TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_soc_alerts_dedup ON soc_alerts(dedup_key);
+CREATE INDEX IF NOT EXISTS idx_soc_alerts_status ON soc_alerts(status);
+
+CREATE TABLE IF NOT EXISTS soc_correlation_graphs (
+    correlation_id TEXT PRIMARY KEY,
+    correlation_title TEXT NOT NULL,
+    affected_entities_json TEXT DEFAULT '[]',
+    participating_alert_ids_json TEXT DEFAULT '[]',
+    participating_event_ids_json TEXT DEFAULT '[]',
+    attack_chain_sequence_json TEXT DEFAULT '[]',
+    correlation_confidence REAL DEFAULT 0.7,
+    created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS soc_threat_intel_indicators (
+    indicator_id TEXT PRIMARY KEY,
+    indicator_type TEXT NOT NULL, -- IP, DOMAIN, HASH, CVE
+    indicator_value TEXT NOT NULL,
+    threat_actor TEXT,
+    campaign TEXT,
+    confidence REAL DEFAULT 0.8,
+    mitre_techniques_json TEXT DEFAULT '[]',
+    source_provider TEXT NOT NULL,
+    published_at TEXT NOT NULL,
+    expires_at TEXT,
+    is_active INTEGER DEFAULT 1,
+    UNIQUE(indicator_type, indicator_value)
+);
+
+CREATE TABLE IF NOT EXISTS soc_investigations (
+    investigation_id TEXT PRIMARY KEY,
+    title TEXT NOT NULL,
+    assigned_analyst TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'OPEN', -- OPEN, IN_PROGRESS, CLOSED
+    primary_hypothesis TEXT NOT NULL,
+    competing_hypotheses_json TEXT DEFAULT '[]',
+    supporting_event_ids_json TEXT DEFAULT '[]',
+    contradictory_evidence_json TEXT DEFAULT '[]',
+    affected_assets_json TEXT DEFAULT '[]',
+    affected_identities_json TEXT DEFAULT '[]',
+    open_questions_json TEXT DEFAULT '[]',
+    findings_summary TEXT,
+    confidence REAL DEFAULT 0.5,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS soc_incidents (
+    incident_id TEXT PRIMARY KEY,
+    title TEXT NOT NULL,
+    description TEXT NOT NULL,
+    severity TEXT NOT NULL DEFAULT 'MEDIUM',
+    priority TEXT NOT NULL DEFAULT 'P2_STANDARD', -- P0_IMMEDIATE, P1_URGENT, P2_STANDARD, P3_LOW
+    status TEXT NOT NULL DEFAULT 'DETECTED', -- DETECTED, TRIAGED, INVESTIGATING, RESPONSE_PENDING, CONTAINMENT_IN_PROGRESS, CONTAINED, RECOVERY, RESOLVED, POST_INCIDENT_REVIEW
+    affected_assets_json TEXT DEFAULT '[]',
+    affected_identities_json TEXT DEFAULT '[]',
+    related_alert_ids_json TEXT DEFAULT '[]',
+    investigation_id TEXT,
+    assigned_owner TEXT,
+    resolution_summary TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS soc_incident_timelines (
+    timeline_entry_id TEXT PRIMARY KEY,
+    incident_id TEXT NOT NULL,
+    entry_timestamp TEXT NOT NULL,
+    entry_type TEXT NOT NULL, -- ALERT, EVENT, ANALYST_NOTE, CONTAINMENT, APPROVAL, RECOVERY
+    description TEXT NOT NULL,
+    evidence_reference TEXT,
+    actor TEXT NOT NULL,
+    FOREIGN KEY(incident_id) REFERENCES soc_incidents(incident_id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS soc_response_plans (
+    plan_id TEXT PRIMARY KEY,
+    incident_id TEXT NOT NULL,
+    recommended_action TEXT NOT NULL, -- REVOKE_SESSION, DISABLE_ACCOUNT, BLOCK_INDICATOR, ISOLATE_ENDPOINT, ROLLBACK_CONFIG
+    target_identifier TEXT NOT NULL,
+    justification TEXT NOT NULL,
+    operational_risk TEXT NOT NULL DEFAULT 'LOW', -- LOW, MEDIUM, HIGH, CRITICAL
+    requires_approval INTEGER DEFAULT 1,
+    approval_token_ref TEXT,
+    status TEXT NOT NULL DEFAULT 'PROPOSED', -- PROPOSED, APPROVED, REJECTED, EXECUTED, FAILED
+    created_at TEXT NOT NULL,
+    FOREIGN KEY(incident_id) REFERENCES soc_incidents(incident_id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS soc_containment_actions (
+    action_id TEXT PRIMARY KEY,
+    plan_id TEXT NOT NULL,
+    incident_id TEXT NOT NULL,
+    action_type TEXT NOT NULL,
+    target TEXT NOT NULL,
+    approval_token TEXT,
+    status TEXT NOT NULL DEFAULT 'EXECUTED', -- EXECUTED, FAILED, ROLLED_BACK
+    execution_result_json TEXT DEFAULT '{}',
+    executed_at TEXT NOT NULL,
+    verified_at TEXT,
+    FOREIGN KEY(plan_id) REFERENCES soc_response_plans(plan_id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS soc_evidence_packages (
+    package_id TEXT PRIMARY KEY,
+    incident_id TEXT NOT NULL,
+    investigation_id TEXT,
+    package_digest_sha256 TEXT NOT NULL,
+    evidence_manifest_json TEXT NOT NULL,
+    sealed_at TEXT NOT NULL,
+    sealed_by TEXT NOT NULL,
+    FOREIGN KEY(incident_id) REFERENCES soc_incidents(incident_id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS soc_detection_evaluations (
+    eval_id TEXT PRIMARY KEY,
+    dataset_name TEXT NOT NULL,
+    total_samples INTEGER NOT NULL,
+    true_positives INTEGER NOT NULL,
+    false_positives INTEGER NOT NULL,
+    false_negatives INTEGER NOT NULL,
+    true_negatives INTEGER NOT NULL,
+    precision_score REAL NOT NULL,
+    recall_score REAL NOT NULL,
+    f1_score REAL NOT NULL,
+    evaluated_at TEXT NOT NULL
+);
+"""
+
+
 def backup_database(db_path: str, backup_dir: str = "persistence_backups") -> str:
     """Creates a timestamped snapshot of the SQLite database prior to any schema modification."""
     if not os.path.exists(db_path):
@@ -4383,6 +4634,17 @@ def apply_migrations(db_path: str) -> int:
             conn.commit()
             logger.info("Migration v31 applied successfully.")
             current_version = 31
+
+        if current_version < 32:
+            logger.info("Applying Migration v32 (Autonomous Threat Detection & SecOps Tables)...")
+            cursor.executescript(MIGRATION_V32)
+            cursor.execute(
+                "INSERT INTO schema_migrations (version, applied_at, description) VALUES (?, ?, ?)",
+                (32, time.time(), "Autonomous Threat Detection, Behavioral Analytics & Real-Time Security Operations Intelligence Engine tables")
+            )
+            conn.commit()
+            logger.info("Migration v32 applied successfully.")
+            current_version = 32
 
         return current_version
     except Exception as e:

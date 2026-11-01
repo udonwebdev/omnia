@@ -565,7 +565,7 @@ async def run_diagnostics():
         print(f"      [19] Mission Control Engine .... FAIL ({e})")
 
     # 12. Module 20: Human Approval Gateway & Consent Orchestrator
-    print("\n[12/41] Checking Module 20: Human Approval Gateway & Consent Orchestrator...")
+    print("\n[12/42] Checking Module 20: Human Approval Gateway & Consent Orchestrator...")
     from approval import (
         approval_gateway,
         ApprovalStatus,
@@ -3399,7 +3399,7 @@ async def run_diagnostics():
         print(f"      [44] Software Delivery Subsystem ....... FAIL ({e})")
 
     # 40. Module 45: Autonomous Quality Assurance, Software Verification & Continuous Testing Intelligence
-    print("\n[40/41] Checking Module 45: Autonomous Quality Assurance, Software Verification & Continuous Testing Intelligence...")
+    print("\n[40/42] Checking Module 45: Autonomous Quality Assurance, Software Verification & Continuous Testing Intelligence...")
     from qa_verification import (
         qa_verification_service,
         RequirementType,
@@ -3494,7 +3494,7 @@ async def run_diagnostics():
         print(f"      [45] Quality Assurance Subsystem ....... FAIL ({e})")
 
     # 41. Module 46: Autonomous Application Security Testing, Vulnerability Intelligence & Defensive Validation
-    print("\n[41/41] Checking Module 46: Autonomous Application Security Testing, Vulnerability Intelligence & Defensive Validation...")
+    print("\n[41/42] Checking Module 46: Autonomous Application Security Testing, Vulnerability Intelligence & Defensive Validation...")
     from app_security import (
         app_security_service,
         AssetType,
@@ -3682,6 +3682,146 @@ async def run_diagnostics():
         import traceback
         traceback.print_exc()
         print(f"      [46] App Security Testing Subsystem ... FAIL ({e})")
+
+    # 42. Module 47: Autonomous Threat Detection, Behavioral Analytics & Real-Time Security Operations Intelligence
+    print("\n[42/42] Checking Module 47: Autonomous Threat Detection, Behavioral Analytics & Real-Time Security Operations Intelligence...")
+    from secops import (
+        secops_service,
+        BaselineStatus,
+        EventResult,
+        IncidentPriority,
+        IncidentStatus,
+        IndicatorType,
+        OperationalRisk,
+        ResponseActionType,
+        SecuritySeverity,
+        ContainmentAuthorizationError,
+    )
+
+    try:
+        # 42a. Telemetry Source Registration & Ingestion Normalization
+        soc_src = secops_service.source_registry.register_source(
+            provider="CLOUDTRAIL_DIAG",
+            environment="STAGING",
+            collection_method="STREAM",
+            auth_method="IAM",
+            asset_scope=["arn:aws:iam::123:role/diag"],
+            event_types_supported=["USER_LOGIN_FAILED", "CONFIG_CHANGE"],
+        )
+        assert soc_src.source_id is not None
+        assert soc_src.health_status == "HEALTHY"
+
+        raw_event = {
+            "event_type": "CONFIG_CHANGE",
+            "category": "CONFIG",
+            "actor": "diag_tamperer",
+            "asset_id": "siem-logger",
+            "result": "SUCCESS",
+            "metadata": {"audit_logging_disabled": True},
+        }
+        normalized = secops_service.normalizer.normalize_event(
+            source_id=soc_src.source_id,
+            provider="CLOUDTRAIL_DIAG",
+            raw_payload=raw_event,
+        )
+        assert not normalized.is_quarantined
+        assert normalized.raw_payload_hash is not None
+        print("      [47] Telemetry Source & Normalization .. PASS (Unified schema, SHA-256 payload integrity & health)")
+
+        # 42b. Behavioral Baselines & Anomaly Detection
+        entity = "diag_worker_bot"
+        metric = "api_request_rate"
+        b_init = secops_service.baselines.update_entity_metric(entity, "SERVICE_ACCOUNT", metric, 5.0)
+        assert b_init.status == BaselineStatus.COLD_START
+
+        for _ in range(25):
+            secops_service.baselines.update_entity_metric(entity, "SERVICE_ACCOUNT", metric, 5.0)
+        secops_service.baselines.update_entity_metric(entity, "SERVICE_ACCOUNT", metric, 6.0)
+        secops_service.baselines.update_entity_metric(entity, "SERVICE_ACCOUNT", metric, 4.0)
+
+        is_anom, z_score, _ = secops_service.baselines.evaluate_anomaly(entity, metric, 200.0)
+        assert is_anom is True and z_score > 5.0
+        print("      [47] Behavioral Baselines & Anomalies .. PASS (Welford statistical tracking, cold-start safe & Z-score)")
+
+        # 42c. Deterministic Detection Rules & Threat Intel
+        alerts = secops_service.detection_engine.evaluate_events([normalized])
+        assert len(alerts) >= 1
+        tamper_alert = alerts[0]
+        assert tamper_alert.rule_id == "RULE-TAMPER-001"
+
+        ind = secops_service.threat_intel.record_indicator(
+            indicator_type=IndicatorType.IP,
+            indicator_value="198.51.100.99",
+            source_provider="DIAG_INTEL",
+            threat_actor="APT-DIAG",
+            confidence=0.9,
+        )
+        assert ind.threat_actor == "APT-DIAG"
+        print("      [47] Threat Detection & Threat Intel ... PASS (Deterministic ATT&CK rules & intelligence enrichment)")
+
+        # 42d. Event Correlation & Risk Scoring
+        login_fail_alert = secops_service.detection_engine._generate_alert(
+            secops_service.repo.get_rule("RULE-AUTH-001"),
+            [normalized],
+        )
+        corr_graph = secops_service.correlation_engine.correlate_alerts_by_entity(
+            alerts=[tamper_alert, login_fail_alert],
+            entity_id="diag_tamperer",
+        )
+        assert corr_graph is not None and len(corr_graph.attack_chain_sequence) == 2
+
+        risk_eval = secops_service.risk_scorer.evaluate_risk(
+            severity=SecuritySeverity.CRITICAL,
+            confidence=0.95,
+            asset_criticality="MISSION_CRITICAL",
+            actor_is_privileged=True,
+            correlated_events_count=2,
+        )
+        assert risk_eval["priority"] == IncidentPriority.P0_IMMEDIATE
+        print("      [47] Event Correlation & Risk Scoring .. PASS (Multi-signal attack graphs & multi-factor priority)")
+
+        # 42e. Incident Management, Governed Containment & Evidence
+        diag_inc = secops_service.incident_manager.create_incident(
+            title="Audit Logger Tampering Attack",
+            description="Security logging disabled by unauthorized entity",
+            severity=SecuritySeverity.CRITICAL,
+            priority=IncidentPriority.P0_IMMEDIATE,
+            affected_identities=["diag_tamperer"],
+        )
+        resp_plan = secops_service.response_planner.generate_response_plan(
+            incident_id=diag_inc.incident_id,
+            action_type=ResponseActionType.DISABLE_ACCOUNT,
+            target_identifier="diag_tamperer",
+            justification="Halt active privilege tampering",
+            operational_risk=OperationalRisk.HIGH,
+        )
+        assert resp_plan.requires_approval is True
+
+        # Unapproved containment fails closed
+        try:
+            secops_service.containment_gateway.execute_containment(resp_plan.plan_id, "auto_agent", approval_token=None)
+            assert False, "Should have failed closed"
+        except ContainmentAuthorizationError:
+            pass
+
+        # Approved containment succeeds
+        action_rec = secops_service.containment_gateway.execute_containment(
+            resp_plan.plan_id,
+            "soc_lead",
+            approval_token="M20-APPROVAL-DIAG-47",
+        )
+        assert action_rec.status == "EXECUTED"
+        assert secops_service.repo.get_incident(diag_inc.incident_id).status == IncidentStatus.CONTAINED
+
+        # Seal evidence package
+        pkg = secops_service.evidence_engine.seal_incident_evidence_package(diag_inc.incident_id, "Chief Forensics")
+        assert pkg.package_digest_sha256 is not None
+        print("      [47] Containment Gate & Evidence Package PASS (Fail-closed Module 20 gate & SHA-256 evidence package)")
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        print(f"      [47] Threat Detection Subsystem ........ FAIL ({e})")
 
     print("\n" + "=" * 60)
     print("Diagnostics complete.")
