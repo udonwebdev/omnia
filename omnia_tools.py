@@ -7227,6 +7227,207 @@ def generate_structured_forensic_report(
         return json.dumps({"success": False, "error": str(e)}, indent=2)
 
 
+# --- Module 49: Autonomous Malware Analysis & Reverse Engineering Tools ---
+
+@tool
+def submit_sample_to_quarantine(
+    file_path: Optional[str] = None,
+    raw_content: Optional[str] = None,
+    file_name: str = "sample.bin",
+    reason: str = "Ingest for autonomous malware triage",
+    isolated_by: str = "omnia_analyst",
+    is_legal_hold: bool = False
+) -> str:
+    """Safely isolates an untrusted file or payload buffer into the quarantine vault with read-only/no-exec permissions."""
+    from malware.service import malware_service
+    import json
+    try:
+        raw_bytes = raw_content.encode("latin-1") if raw_content is not None else None
+        sample, q_rec = malware_service.quarantine_sample(
+            file_path=file_path,
+            raw_bytes=raw_bytes,
+            file_name=file_name,
+            reason=reason,
+            isolated_by=isolated_by,
+            is_legal_hold=is_legal_hold
+        )
+        return json.dumps({
+            "success": True,
+            "sample_id": sample.sample_id,
+            "sha256_hash": sample.sha256_hash,
+            "file_name": sample.file_name,
+            "file_size": sample.file_size,
+            "quarantine_id": q_rec.quarantine_id,
+            "quarantine_path": q_rec.quarantine_path,
+            "status": q_rec.status.value,
+            "is_legal_hold": q_rec.is_legal_hold
+        }, indent=2)
+    except Exception as e:
+        return json.dumps({"success": False, "error": str(e)}, indent=2)
+
+
+@tool
+def inspect_and_identify_file(
+    sample_id: Optional[str] = None,
+    file_path: Optional[str] = None,
+    raw_content: Optional[str] = None,
+    file_name: str = ""
+) -> str:
+    """Performs pure-Python magic bytes identification, MIME typing, and flags extension spoofing / mismatches."""
+    from malware.service import malware_service
+    import json
+    try:
+        if sample_id:
+            raw_bytes = malware_service.quarantine_manager.get_quarantined_bytes(sample_id)
+            sample = malware_service.repo.get_sample(sample_id)
+            fname = file_name or (sample.file_name if sample else "sample.bin")
+        elif file_path:
+            with open(file_path, "rb") as f:
+                raw_bytes = f.read()
+            fname = file_name or file_path
+        elif raw_content is not None:
+            raw_bytes = raw_content.encode("latin-1")
+            fname = file_name or "stream.bin"
+        else:
+            return json.dumps({"success": False, "error": "Must provide sample_id, file_path, or raw_content."}, indent=2)
+
+        res = malware_service.identify_file(raw_bytes, file_name=fname)
+        return json.dumps({
+            "success": True,
+            "file_type": res["file_type"].value if hasattr(res["file_type"], "value") else str(res["file_type"]),
+            "mime_type": res["mime_type"],
+            "confidence": res["confidence"],
+            "extension": res["extension"],
+            "extension_mismatch": res["extension_mismatch"],
+            "details": res["details"]
+        }, indent=2)
+    except Exception as e:
+        return json.dumps({"success": False, "error": str(e)}, indent=2)
+
+
+@tool
+def execute_static_malware_analysis(
+    sample_id: str,
+    profile: str = "STANDARD"
+) -> str:
+    """Executes pure-Python structural parsing (PE, ELF, Scripts), Shannon entropy computation, and anomaly analysis."""
+    from malware.service import malware_service
+    import json
+    try:
+        static_res, indicators, behaviors = malware_service.analyze_sample(sample_id=sample_id, profile=profile)
+        return json.dumps({
+            "success": True,
+            "analysis_id": static_res.analysis_id,
+            "sample_id": static_res.sample_id,
+            "format_detected": static_res.format_detected,
+            "entropy": static_res.entropy,
+            "sections_count": len(static_res.sections),
+            "imports_dlls_count": len(static_res.imports),
+            "exports_count": len(static_res.exports),
+            "anomalies_count": len(static_res.anomalies),
+            "indicators_extracted": len(indicators),
+            "behaviors_classified": len(behaviors)
+        }, indent=2)
+    except Exception as e:
+        return json.dumps({"success": False, "error": str(e)}, indent=2)
+
+
+@tool
+def extract_malware_indicators_and_behaviors(
+    sample_id: str
+) -> str:
+    """Retrieves extracted network IOCs, registry keys, mutexes, and MITRE ATT&CK behavioral mappings for a sample."""
+    from malware.service import malware_service
+    import json
+    try:
+        indicators = malware_service.repo.list_indicators_for_sample(sample_id)
+        behaviors = malware_service.repo.list_behaviors_for_sample(sample_id)
+        return json.dumps({
+            "success": True,
+            "sample_id": sample_id,
+            "indicators": [
+                {
+                    "indicator_id": i.indicator_id,
+                    "type": i.indicator_type,
+                    "value": i.indicator_value,
+                    "mitre_technique": i.mitre_technique,
+                    "confidence": i.confidence
+                }
+                for i in indicators
+            ],
+            "behaviors": [
+                {
+                    "classification_id": b.classification_id,
+                    "category": b.category.value if hasattr(b.category, "value") else str(b.category),
+                    "behavior_name": b.behavior_name,
+                    "mitre_technique": b.mitre_technique,
+                    "confidence": b.confidence,
+                    "evidence": b.supporting_evidence
+                }
+                for b in behaviors
+            ]
+        }, indent=2)
+    except Exception as e:
+        return json.dumps({"success": False, "error": str(e)}, indent=2)
+
+
+@tool
+def generate_defensive_detection_rules(
+    sample_id: str,
+    base_name: Optional[str] = None
+) -> str:
+    """Generates and validates defensive YARA and Sigma detection rules based on structural and behavioral evidence."""
+    from malware.service import malware_service
+    import json
+    try:
+        yara_rule, sigma_rule = malware_service.generate_rules(sample_id=sample_id, base_name=base_name)
+        return json.dumps({
+            "success": True,
+            "sample_id": sample_id,
+            "yara_rule": {
+                "rule_id": yara_rule.rule_id,
+                "rule_name": yara_rule.rule_name,
+                "validation_status": yara_rule.validation_status,
+                "content_preview": yara_rule.rule_content[:200] + "..."
+            },
+            "sigma_rule": {
+                "rule_id": sigma_rule.rule_id,
+                "rule_name": sigma_rule.rule_name,
+                "validation_status": sigma_rule.validation_status,
+                "content_preview": sigma_rule.rule_content[:200] + "..."
+            }
+        }, indent=2)
+    except Exception as e:
+        return json.dumps({"success": False, "error": str(e)}, indent=2)
+
+
+@tool
+def generate_malware_intelligence_report(
+    sample_id: str,
+    investigator: str = "Omnia.SecOpsAnalyst"
+) -> str:
+    """Synthesizes a comprehensive malware report with calculated risk score, verdict, and SHA-256 cryptographic seal."""
+    from malware.service import malware_service
+    import json
+    try:
+        report = malware_service.generate_intelligence_report(sample_id=sample_id, investigator=investigator)
+        return json.dumps({
+            "success": True,
+            "report_id": report.report_id,
+            "sample_id": report.sample_id,
+            "title": report.title,
+            "verdict": report.verdict.value if hasattr(report.verdict, "value") else str(report.verdict),
+            "risk_score": report.risk_score,
+            "executive_summary": report.executive_summary,
+            "findings_count": len(report.findings),
+            "recommendations": report.recommendations,
+            "cryptographic_seal": report.cryptographic_seal,
+            "created_at": report.created_at
+        }, indent=2)
+    except Exception as e:
+        return json.dumps({"success": False, "error": str(e)}, indent=2)
+
+
 OMNIA_ALL_TOOLS = [
     register_security_telemetry_source,
     ingest_and_evaluate_security_telemetry,
@@ -7542,6 +7743,12 @@ OMNIA_ALL_TOOLS = [
     reconstruct_forensic_timeline,
     evaluate_forensic_hypothesis,
     generate_structured_forensic_report,
+    submit_sample_to_quarantine,
+    inspect_and_identify_file,
+    execute_static_malware_analysis,
+    extract_malware_indicators_and_behaviors,
+    generate_defensive_detection_rules,
+    generate_malware_intelligence_report,
 ]
 
 # Backward compatibility alias

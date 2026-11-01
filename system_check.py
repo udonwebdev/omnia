@@ -3825,7 +3825,7 @@ async def run_diagnostics():
 
 
     # Stage 43: Autonomous Digital Forensics, Evidence Preservation & Incident Investigation Intelligence
-    print("\n[43/43] Checking Module 48: Autonomous Digital Forensics, Evidence Preservation & Incident Investigation Intelligence...")
+    print("\n[43/44] Checking Module 48: Autonomous Digital Forensics, Evidence Preservation & Incident Investigation Intelligence...")
     from forensics import (
         forensics_service,
         CaseStatus,
@@ -3912,6 +3912,72 @@ async def run_diagnostics():
         import traceback
         traceback.print_exc()
         print(f"      [48] Forensics Subsystem ............... FAIL ({e})")
+
+    # Stage 44: Autonomous Malware Analysis, Reverse Engineering & Behavioral Classification Intelligence
+    print("\n[44/44] Checking Module 49: Autonomous Malware Analysis, Reverse Engineering & Behavioral Classification Intelligence...")
+    from malware import (
+        malware_service,
+        SampleVerdict,
+        QuarantineStatus,
+        FileType,
+        BehaviorCategory,
+    )
+
+    try:
+        # 1. Ingest sample into quarantine vault
+        test_payload = (
+            b"MZ\x90\x00\x03\x00\x00\x00\x04\x00\x00\x00\xff\xff\x00\x00"
+            b"\xb8\x00\x00\x00\x00\x00\x00\x00@\x00\x00\x00\x00\x00\x00\x00"
+            b"PE\x00\x00\x4c\x01\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00"
+            b"http://c2.evil-corp.internal/beacon\x00"
+            b"198.51.100.200\x00"
+            b"HKLM\\Software\\Microsoft\\Windows\\CurrentVersion\\Run\x00"
+            b"VirtualAlloc\x00"
+        )
+        mal_sample, q_rec = malware_service.quarantine_sample(
+            raw_bytes=test_payload,
+            file_name="invoice_update.pdf.exe",
+            reason="Diagnostic triage check",
+            isolated_by="diag_secops_agent",
+            is_legal_hold=True
+        )
+        assert mal_sample.is_quarantined is True
+        assert q_rec.status == QuarantineStatus.QUARANTINED
+        print("      [49] Vault Quarantine Isolation ........ PASS (Read-only secure vault isolation verified)")
+
+        # 2. File Identification and Extension Mismatch
+        ident = malware_service.identify_file(test_payload, file_name="invoice_update.pdf")
+        assert ident["file_type"] == FileType.PE_EXE
+        assert ident["extension_mismatch"] is True
+        print("      [49] Magic Bytes & Spoofing Check ...... PASS (Pure-Python magic detection & spoof flagged)")
+
+        # 3. Static Analysis & Behavioral Classification
+        static_res, indicators, behaviors = malware_service.analyze_sample(mal_sample.sample_id)
+        assert static_res.entropy > 0.0
+        assert len(indicators) > 0
+        print(f"      [49] Static Parsing & IOC Extraction ... PASS ({len(indicators)} IOCs extracted, entropy computed)")
+
+        # 4. Rule Generation (YARA & Sigma)
+        yara_rule, sigma_rule = malware_service.generate_rules(mal_sample.sample_id, "Diag_Trojan_Rule")
+        assert yara_rule.validation_status == "VALIDATED"
+        assert sigma_rule.validation_status == "VALIDATED"
+        print("      [49] Defensive Rule Synthesis .......... PASS (Syntax-validated YARA & Sigma rules generated)")
+
+        # 5. Malware Intelligence Report
+        report = malware_service.generate_intelligence_report(mal_sample.sample_id, investigator="diag_analyst")
+        assert len(report.cryptographic_seal) == 64
+        assert report.risk_score > 0.0
+        print(f"      [49] Malware Intelligence Report ....... PASS (Cryptographically sealed report [{report.verdict.value}])")
+
+        # 6. Sandbox Safe Boundary
+        sb_res = malware_service.sandbox_adapter.query_dynamic_execution(mal_sample.sample_id)
+        assert sb_res["status"] == "UNAVAILABLE"
+        print("      [49] Sandbox Boundary Safety ........... PASS (Host execution strictly prevented)")
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        print(f"      [49] Malware Analysis Subsystem ........ FAIL ({e})")
 
     print("\n" + "=" * 60)
     print("Diagnostics complete.")

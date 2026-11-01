@@ -7,7 +7,7 @@ from typing import List, Tuple
 
 logger = logging.getLogger("Omnia.Persistence.Migrations")
 
-CURRENT_SCHEMA_VERSION = 33
+CURRENT_SCHEMA_VERSION = 34
 
 MIGRATION_V1 = """
 -- Schema Version 1: Durable Task Graph & Crash Recovery Tables
@@ -4438,6 +4438,148 @@ CREATE TABLE IF NOT EXISTS for_legal_holds (
 CREATE INDEX IF NOT EXISTS idx_for_holds_case ON for_legal_holds(case_id);
 """
 
+# ---------------------------------------------------------------------------
+# Migration v34: Autonomous Malware Analysis, Reverse Engineering & Behavioral Classification Intelligence
+# ---------------------------------------------------------------------------
+MIGRATION_V34 = """
+-- Malware samples repository
+CREATE TABLE IF NOT EXISTS mal_samples (
+    sample_id TEXT PRIMARY KEY,
+    sha256_hash TEXT NOT NULL UNIQUE,
+    sha1_hash TEXT NOT NULL,
+    md5_hash TEXT NOT NULL,
+    file_name TEXT NOT NULL,
+    file_size INTEGER NOT NULL,
+    file_type TEXT NOT NULL,
+    mime_type TEXT NOT NULL,
+    classification TEXT NOT NULL DEFAULT 'UNKNOWN',
+    is_quarantined INTEGER NOT NULL DEFAULT 0,
+    submission_source TEXT NOT NULL,
+    submitted_by TEXT NOT NULL,
+    created_at REAL NOT NULL,
+    updated_at REAL NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_mal_samples_sha256 ON mal_samples(sha256_hash);
+CREATE INDEX IF NOT EXISTS idx_mal_samples_classification ON mal_samples(classification);
+
+-- Quarantine records and secure isolation tracking
+CREATE TABLE IF NOT EXISTS mal_quarantine_records (
+    quarantine_id TEXT PRIMARY KEY,
+    sample_id TEXT NOT NULL,
+    quarantine_path TEXT NOT NULL,
+    original_path TEXT NOT NULL,
+    reason TEXT NOT NULL,
+    isolated_by TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'QUARANTINED',
+    is_legal_hold INTEGER NOT NULL DEFAULT 0,
+    quarantined_at REAL NOT NULL,
+    released_at REAL,
+    released_by TEXT,
+    FOREIGN KEY(sample_id) REFERENCES mal_samples(sample_id)
+);
+CREATE INDEX IF NOT EXISTS idx_mal_quarantine_sample ON mal_quarantine_records(sample_id);
+
+-- Analysis jobs workflow
+CREATE TABLE IF NOT EXISTS mal_analysis_jobs (
+    job_id TEXT PRIMARY KEY,
+    sample_id TEXT NOT NULL,
+    profile TEXT NOT NULL,
+    stage TEXT NOT NULL DEFAULT 'SUBMITTED',
+    status TEXT NOT NULL DEFAULT 'QUEUED',
+    progress REAL NOT NULL DEFAULT 0.0,
+    timeout_seconds INTEGER NOT NULL DEFAULT 300,
+    error_message TEXT,
+    worker_id TEXT,
+    created_at REAL NOT NULL,
+    completed_at REAL,
+    FOREIGN KEY(sample_id) REFERENCES mal_samples(sample_id)
+);
+CREATE INDEX IF NOT EXISTS idx_mal_jobs_sample ON mal_analysis_jobs(sample_id);
+CREATE INDEX IF NOT EXISTS idx_mal_jobs_status ON mal_analysis_jobs(status);
+
+-- Static reverse engineering analysis results
+CREATE TABLE IF NOT EXISTS mal_static_analyses (
+    analysis_id TEXT PRIMARY KEY,
+    sample_id TEXT NOT NULL,
+    format_detected TEXT NOT NULL,
+    entropy REAL NOT NULL,
+    headers_json TEXT,
+    sections_json TEXT,
+    imports_json TEXT,
+    exports_json TEXT,
+    strings_summary_json TEXT,
+    anomalies_json TEXT,
+    analyzed_at REAL NOT NULL,
+    FOREIGN KEY(sample_id) REFERENCES mal_samples(sample_id)
+);
+CREATE INDEX IF NOT EXISTS idx_mal_static_sample ON mal_static_analyses(sample_id);
+
+-- Extracted indicators of compromise (IOCs)
+CREATE TABLE IF NOT EXISTS mal_extracted_indicators (
+    indicator_id TEXT PRIMARY KEY,
+    sample_id TEXT NOT NULL,
+    indicator_type TEXT NOT NULL,
+    indicator_value TEXT NOT NULL,
+    context TEXT,
+    mitre_technique TEXT,
+    confidence REAL NOT NULL DEFAULT 1.0,
+    extracted_at REAL NOT NULL,
+    FOREIGN KEY(sample_id) REFERENCES mal_samples(sample_id)
+);
+CREATE INDEX IF NOT EXISTS idx_mal_indicators_sample ON mal_extracted_indicators(sample_id);
+CREATE INDEX IF NOT EXISTS idx_mal_indicators_type_val ON mal_extracted_indicators(indicator_type, indicator_value);
+
+-- Behavioral classifications and MITRE ATT&CK mapping
+CREATE TABLE IF NOT EXISTS mal_behavioral_classifications (
+    classification_id TEXT PRIMARY KEY,
+    sample_id TEXT NOT NULL,
+    category TEXT NOT NULL,
+    behavior_name TEXT NOT NULL,
+    mitre_technique TEXT,
+    supporting_evidence_json TEXT,
+    confidence REAL NOT NULL,
+    observed_status TEXT NOT NULL DEFAULT 'STATIC_INFERRED',
+    created_at REAL NOT NULL,
+    FOREIGN KEY(sample_id) REFERENCES mal_samples(sample_id)
+);
+CREATE INDEX IF NOT EXISTS idx_mal_behaviors_sample ON mal_behavioral_classifications(sample_id);
+CREATE INDEX IF NOT EXISTS idx_mal_behaviors_cat ON mal_behavioral_classifications(category);
+
+-- Defensive detection rules (YARA / Sigma)
+CREATE TABLE IF NOT EXISTS mal_detection_rules (
+    rule_id TEXT PRIMARY KEY,
+    sample_id TEXT,
+    rule_type TEXT NOT NULL,
+    rule_name TEXT NOT NULL,
+    rule_content TEXT NOT NULL,
+    test_fixture_json TEXT,
+    validation_status TEXT NOT NULL DEFAULT 'VALIDATED',
+    created_at REAL NOT NULL,
+    FOREIGN KEY(sample_id) REFERENCES mal_samples(sample_id)
+);
+CREATE INDEX IF NOT EXISTS idx_mal_rules_sample ON mal_detection_rules(sample_id);
+CREATE INDEX IF NOT EXISTS idx_mal_rules_type ON mal_detection_rules(rule_type);
+
+-- Comprehensive forensic and malware intelligence reports
+CREATE TABLE IF NOT EXISTS mal_reports (
+    report_id TEXT PRIMARY KEY,
+    sample_id TEXT NOT NULL,
+    title TEXT NOT NULL,
+    executive_summary TEXT NOT NULL,
+    verdict TEXT NOT NULL,
+    risk_score REAL NOT NULL,
+    findings_json TEXT NOT NULL,
+    indicators_json TEXT NOT NULL,
+    recommendations_json TEXT NOT NULL,
+    cryptographic_seal TEXT NOT NULL,
+    generated_by TEXT NOT NULL,
+    created_at REAL NOT NULL,
+    FOREIGN KEY(sample_id) REFERENCES mal_samples(sample_id)
+);
+CREATE INDEX IF NOT EXISTS idx_mal_reports_sample ON mal_reports(sample_id);
+CREATE INDEX IF NOT EXISTS idx_mal_reports_verdict ON mal_reports(verdict);
+"""
+
 def apply_migrations(db_path: str) -> int:
     """Applies ordered, transactional migrations to ensure schema freshness without data destruction."""
     os.makedirs(os.path.dirname(os.path.abspath(db_path)), exist_ok=True)
@@ -4825,6 +4967,17 @@ def apply_migrations(db_path: str) -> int:
             conn.commit()
             logger.info("Migration v33 applied successfully.")
             current_version = 33
+
+        if current_version < 34:
+            logger.info("Applying Migration v34 (Autonomous Malware Analysis, Reverse Engineering & Behavioral Classification Tables)...")
+            cursor.executescript(MIGRATION_V34)
+            cursor.execute(
+                "INSERT INTO schema_migrations (version, applied_at, description) VALUES (?, ?, ?)",
+                (34, time.time(), "Autonomous Malware Analysis, Reverse Engineering & Behavioral Classification Intelligence tables")
+            )
+            conn.commit()
+            logger.info("Migration v34 applied successfully.")
+            current_version = 34
 
         return current_version
     except Exception as e:
