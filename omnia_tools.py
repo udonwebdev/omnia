@@ -6041,7 +6041,209 @@ def execute_elastic_scaling_proposal(
     except Exception as e:
         return json.dumps({"success": False, "error": str(e)}, indent=2)
 
+
+# =====================================================================
+# MODULE 43: AUTONOMOUS INFRASTRUCTURE PROVISIONING & ENVIRONMENT LIFECYCLE MANAGEMENT
+# =====================================================================
+
+def register_infrastructure_provider(
+    provider_id: str,
+    name: str,
+    provider_type: str = "SIMULATED_SANDBOX",
+    supported_capabilities: Optional[List[str]] = None,
+) -> str:
+    """Registers an infrastructure provider adapter into the Module 43 registry."""
+    from infrastructure_lifecycle.service import infrastructure_lifecycle_service
+    from infrastructure_lifecycle.providers import LocalSandboxProviderAdapter
+    from infrastructure_lifecycle.models import ProviderCapability
+    import json
+    try:
+        caps = [ProviderCapability(c.upper()) for c in (supported_capabilities or ["DISCOVERY", "PROVISION", "MUTATE", "RESTART", "DECOMMISSION", "INSPECT", "LOGS"])]
+        adapter = LocalSandboxProviderAdapter(provider_id=provider_id, capabilities=caps)
+        rec = infrastructure_lifecycle_service.register_provider(adapter)
+        return json.dumps({
+            "success": True,
+            "provider_id": rec.provider_id,
+            "name": rec.name,
+            "provider_type": rec.provider_type.value,
+            "capabilities": [c.value for c in rec.supported_capabilities],
+        }, indent=2)
+    except Exception as e:
+        return json.dumps({"success": False, "error": str(e)}, indent=2)
+
+
+def register_infrastructure_blueprint(
+    blueprint_id: str,
+    name: str,
+    resource_definitions: List[Dict[str, Any]],
+    environment_type: str = "TESTING",
+    version: str = "1.0.0",
+    dependencies: Optional[List[str]] = None,
+) -> str:
+    """Registers a validated declarative infrastructure blueprint."""
+    from infrastructure_lifecycle.service import infrastructure_lifecycle_service
+    from infrastructure_lifecycle.models import EnvironmentType
+    import json
+    try:
+        env_type = EnvironmentType(environment_type.upper())
+        bp = infrastructure_lifecycle_service.register_blueprint(
+            blueprint_id=blueprint_id,
+            name=name,
+            version=version,
+            environment_type=env_type,
+            resource_definitions=resource_definitions,
+            dependencies=dependencies or [],
+        )
+        return json.dumps({
+            "success": True,
+            "blueprint_id": bp.blueprint_id,
+            "name": bp.name,
+            "version": bp.version,
+            "resource_count": len(bp.resource_definitions),
+        }, indent=2)
+    except Exception as e:
+        return json.dumps({"success": False, "error": str(e)}, indent=2)
+
+
+def provision_environment_from_blueprint(
+    environment_name: str,
+    environment_type: str,
+    provider_id: str,
+    blueprint_id: str,
+    approval_token: Optional[str] = None,
+) -> str:
+    """Requests, plans, gates, and provisions an infrastructure environment from a blueprint."""
+    from infrastructure_lifecycle.service import infrastructure_lifecycle_service
+    from infrastructure_lifecycle.models import EnvironmentType
+    import json
+    try:
+        env_type = EnvironmentType(environment_type.upper())
+        env = infrastructure_lifecycle_service.create_environment(
+            name=environment_name,
+            environment_type=env_type,
+            provider_id=provider_id,
+            blueprint_id=blueprint_id,
+        )
+        plan = infrastructure_lifecycle_service.plan_provisioning(env.environment_id)
+        exec_rec = infrastructure_lifecycle_service.execute_provisioning(plan.plan_id, approval_token=approval_token)
+        return json.dumps({
+            "success": exec_rec.status == "SUCCESS",
+            "environment_id": env.environment_id,
+            "lifecycle_state": env.current_state.value,
+            "plan_id": plan.plan_id,
+            "execution_id": exec_rec.execution_id,
+            "status": exec_rec.status,
+            "errors": exec_rec.errors,
+        }, indent=2)
+    except Exception as e:
+        return json.dumps({"success": False, "error": str(e)}, indent=2)
+
+
+def deploy_release_to_environment(
+    environment_id: str,
+    application_name: str,
+    version: str,
+    artifact_uri: str,
+    strategy: str = "DIRECT",
+    approval_token: Optional[str] = None,
+) -> str:
+    """Registers a release and initiates rollout deployment to an environment."""
+    from infrastructure_lifecycle.service import infrastructure_lifecycle_service
+    from infrastructure_lifecycle.models import DeploymentStrategy
+    import json
+    try:
+        strat = DeploymentStrategy(strategy.upper())
+        rel = infrastructure_lifecycle_service.register_release(
+            application_name=application_name,
+            version=version,
+            artifact_uri=artifact_uri,
+        )
+        dep = infrastructure_lifecycle_service.deploy_release(
+            environment_id=environment_id,
+            release_id=rel.release_id,
+            strategy=strat,
+            approval_token=approval_token,
+        )
+        dep = infrastructure_lifecycle_service.deployment.complete_deployment(
+            deployment_id=dep.deployment_id,
+            success=True,
+        )
+        return json.dumps({
+            "success": True,
+            "deployment_id": dep.deployment_id,
+            "release_id": rel.release_id,
+            "environment_id": environment_id,
+            "status": dep.status.value,
+            "strategy": dep.strategy.value,
+        }, indent=2)
+    except Exception as e:
+        return json.dumps({"success": False, "error": str(e)}, indent=2)
+
+
+def verify_environment_and_deployment(
+    deployment_id: str,
+    simulate_checks: bool = True,
+    override_failure_reason: Optional[str] = None,
+) -> str:
+    """Executes multi-tier independent verification of infrastructure reachability, endpoints, and telemetry."""
+    from infrastructure_lifecycle.service import infrastructure_lifecycle_service
+    import json
+    try:
+        ver = infrastructure_lifecycle_service.verify_deployment(
+            deployment_id=deployment_id,
+            simulate_checks=simulate_checks,
+            override_failure_reason=override_failure_reason,
+        )
+        return json.dumps({
+            "success": True,
+            "verification_id": ver.verification_id,
+            "deployment_id": ver.deployment_id,
+            "is_fully_verified": ver.is_fully_verified,
+            "check_results": ver.check_results,
+        }, indent=2)
+    except Exception as e:
+        return json.dumps({"success": False, "error": str(e)}, indent=2)
+
+
+def reconcile_infrastructure_drift(
+    environment_id: str,
+    auto_reconcile: bool = False,
+) -> str:
+    """Compares actual provider state against blueprint desired state and detects drift."""
+    from infrastructure_lifecycle.service import infrastructure_lifecycle_service
+    import json
+    try:
+        findings = infrastructure_lifecycle_service.reconcile_drift(
+            environment_id=environment_id,
+            auto_reconcile=auto_reconcile,
+        )
+        return json.dumps({
+            "success": True,
+            "environment_id": environment_id,
+            "drift_count": len(findings),
+            "findings": [
+                {
+                    "drift_id": f.drift_id,
+                    "resource_id": f.resource_id,
+                    "drift_type": f.drift_type.value,
+                    "expected": f.expected_state,
+                    "actual": f.actual_state,
+                    "is_reconciled": f.is_reconciled,
+                }
+                for f in findings
+            ],
+        }, indent=2)
+    except Exception as e:
+        return json.dumps({"success": False, "error": str(e)}, indent=2)
+
+
 OMNIA_ALL_TOOLS = [
+    register_infrastructure_provider,
+    register_infrastructure_blueprint,
+    provision_environment_from_blueprint,
+    deploy_release_to_environment,
+    verify_environment_and_deployment,
+    reconcile_infrastructure_drift,
     register_capacity_resource,
     record_capacity_telemetry,
     forecast_infrastructure_capacity,

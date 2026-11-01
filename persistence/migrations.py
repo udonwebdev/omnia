@@ -7,7 +7,7 @@ from typing import List, Tuple
 
 logger = logging.getLogger("Omnia.Persistence.Migrations")
 
-CURRENT_SCHEMA_VERSION = 27
+CURRENT_SCHEMA_VERSION = 28
 
 MIGRATION_V1 = """
 -- Schema Version 1: Durable Task Graph & Crash Recovery Tables
@@ -3174,6 +3174,171 @@ CREATE TABLE IF NOT EXISTS cap_forecast_evaluations (
 );
 """
 
+MIGRATION_V28 = """
+-- Schema Version 28: Autonomous Infrastructure Provisioning, Deployment & Environment Lifecycle Management
+
+CREATE TABLE IF NOT EXISTS infra_providers (
+    provider_id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    provider_type TEXT NOT NULL,
+    supported_capabilities_json TEXT DEFAULT '[]',
+    auth_secret_ref TEXT,
+    is_active INTEGER DEFAULT 1,
+    metadata_json TEXT DEFAULT '{}',
+    registered_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS infra_blueprints (
+    blueprint_id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    version TEXT NOT NULL,
+    environment_type TEXT NOT NULL,
+    resource_definitions_json TEXT DEFAULT '[]',
+    dependencies_json TEXT DEFAULT '[]',
+    network_spec_json TEXT DEFAULT '{}',
+    storage_spec_json TEXT DEFAULT '{}',
+    compute_spec_json TEXT DEFAULT '{}',
+    required_secrets_json TEXT DEFAULT '[]',
+    lifecycle_ttl_hours REAL,
+    created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_infra_bp_env ON infra_blueprints(environment_type);
+
+CREATE TABLE IF NOT EXISTS infra_environments (
+    environment_id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    environment_type TEXT NOT NULL,
+    provider_id TEXT NOT NULL,
+    blueprint_id TEXT NOT NULL,
+    current_state TEXT NOT NULL,
+    region TEXT NOT NULL,
+    owner TEXT NOT NULL,
+    active_release_version TEXT,
+    active_configuration_version TEXT NOT NULL,
+    expiration_timestamp TEXT,
+    last_verified_at TEXT,
+    is_locked INTEGER DEFAULT 0,
+    metadata_json TEXT DEFAULT '{}',
+    created_at TEXT NOT NULL,
+    FOREIGN KEY(provider_id) REFERENCES infra_providers(provider_id),
+    FOREIGN KEY(blueprint_id) REFERENCES infra_blueprints(blueprint_id)
+);
+CREATE INDEX IF NOT EXISTS idx_infra_env_state ON infra_environments(current_state);
+
+CREATE TABLE IF NOT EXISTS infra_environment_resources (
+    resource_id TEXT PRIMARY KEY,
+    environment_id TEXT NOT NULL,
+    resource_name TEXT NOT NULL,
+    resource_type TEXT NOT NULL,
+    status TEXT NOT NULL,
+    provider_resource_ref TEXT,
+    capacity_allocated REAL DEFAULT 1.0,
+    created_at TEXT NOT NULL,
+    FOREIGN KEY(environment_id) REFERENCES infra_environments(environment_id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_infra_env_res ON infra_environment_resources(environment_id);
+
+CREATE TABLE IF NOT EXISTS infra_provisioning_plans (
+    plan_id TEXT PRIMARY KEY,
+    environment_id TEXT NOT NULL,
+    blueprint_id TEXT NOT NULL,
+    actions_json TEXT DEFAULT '[]',
+    dependency_order_json TEXT DEFAULT '[]',
+    capacity_verified INTEGER DEFAULT 0,
+    estimated_cost_usd REAL DEFAULT 0.0,
+    requires_approval INTEGER DEFAULT 1,
+    approval_token TEXT,
+    status TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    FOREIGN KEY(environment_id) REFERENCES infra_environments(environment_id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS infra_provisioning_executions (
+    execution_id TEXT PRIMARY KEY,
+    plan_id TEXT NOT NULL,
+    environment_id TEXT NOT NULL,
+    status TEXT NOT NULL,
+    executed_actions_json TEXT DEFAULT '[]',
+    errors_json TEXT DEFAULT '[]',
+    executed_at TEXT NOT NULL,
+    FOREIGN KEY(plan_id) REFERENCES infra_provisioning_plans(plan_id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS infra_releases (
+    release_id TEXT PRIMARY KEY,
+    application_name TEXT NOT NULL,
+    version TEXT NOT NULL,
+    artifact_uri TEXT NOT NULL,
+    checksum_sha256 TEXT NOT NULL,
+    source_revision TEXT NOT NULL,
+    created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS infra_deployments (
+    deployment_id TEXT PRIMARY KEY,
+    environment_id TEXT NOT NULL,
+    release_id TEXT NOT NULL,
+    strategy TEXT NOT NULL,
+    status TEXT NOT NULL,
+    previous_release_id TEXT,
+    approval_token TEXT,
+    started_at TEXT NOT NULL,
+    completed_at TEXT,
+    FOREIGN KEY(environment_id) REFERENCES infra_environments(environment_id) ON DELETE CASCADE,
+    FOREIGN KEY(release_id) REFERENCES infra_releases(release_id)
+);
+CREATE INDEX IF NOT EXISTS idx_infra_dep_env ON infra_deployments(environment_id);
+
+CREATE TABLE IF NOT EXISTS infra_verifications (
+    verification_id TEXT PRIMARY KEY,
+    deployment_id TEXT NOT NULL,
+    environment_id TEXT NOT NULL,
+    infrastructure_ready INTEGER NOT NULL,
+    application_ready INTEGER NOT NULL,
+    operational_ready INTEGER NOT NULL,
+    is_fully_verified INTEGER NOT NULL,
+    check_results_json TEXT DEFAULT '{}',
+    verified_at TEXT NOT NULL,
+    FOREIGN KEY(deployment_id) REFERENCES infra_deployments(deployment_id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS infra_rollbacks (
+    rollback_id TEXT PRIMARY KEY,
+    deployment_id TEXT NOT NULL,
+    target_environment_id TEXT NOT NULL,
+    from_release_id TEXT NOT NULL,
+    to_release_id TEXT NOT NULL,
+    approval_token TEXT,
+    status TEXT NOT NULL,
+    executed_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS infra_drift_findings (
+    drift_id TEXT PRIMARY KEY,
+    environment_id TEXT NOT NULL,
+    drift_type TEXT NOT NULL,
+    resource_id TEXT NOT NULL,
+    expected_state TEXT NOT NULL,
+    actual_state TEXT NOT NULL,
+    remediation_suggestion TEXT NOT NULL,
+    is_reconciled INTEGER DEFAULT 0,
+    detected_at TEXT NOT NULL,
+    FOREIGN KEY(environment_id) REFERENCES infra_environments(environment_id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS infra_decommission_plans (
+    decommission_id TEXT PRIMARY KEY,
+    environment_id TEXT NOT NULL,
+    resources_to_delete_json TEXT DEFAULT '[]',
+    data_retention_preserved INTEGER DEFAULT 1,
+    approval_token TEXT,
+    status TEXT NOT NULL,
+    executed_at TEXT,
+    created_at TEXT NOT NULL,
+    FOREIGN KEY(environment_id) REFERENCES infra_environments(environment_id) ON DELETE CASCADE
+);
+"""
+
 def backup_database(db_path: str, backup_dir: str = "persistence_backups") -> str:
     """Creates a timestamped snapshot of the SQLite database prior to any schema modification."""
     if not os.path.exists(db_path):
@@ -3507,6 +3672,17 @@ def apply_migrations(db_path: str) -> int:
             conn.commit()
             logger.info("Migration v27 applied successfully.")
             current_version = 27
+
+        if current_version < 28:
+            logger.info("Applying Migration v28 (Autonomous Infrastructure Provisioning & Environment Lifecycle Management Tables)...")
+            cursor.executescript(MIGRATION_V28)
+            cursor.execute(
+                "INSERT INTO schema_migrations (version, applied_at, description) VALUES (?, ?, ?)",
+                (28, time.time(), "Autonomous Infrastructure Provisioning, Deployment and Environment Lifecycle Management tables")
+            )
+            conn.commit()
+            logger.info("Migration v28 applied successfully.")
+            current_version = 28
 
         return current_version
     except Exception as e:

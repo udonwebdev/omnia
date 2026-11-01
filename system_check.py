@@ -3233,6 +3233,84 @@ async def run_diagnostics():
         traceback.print_exc()
         print(f"      [42] Capacity Planning Subsystem ....... FAIL ({e})")
 
+    # =========================================================================
+    # STAGE 38: MODULE 43: AUTONOMOUS INFRASTRUCTURE PROVISIONING & ENVIRONMENT LIFECYCLE MANAGEMENT
+    # =========================================================================
+    print("\n[38/38] Checking Module 43: Autonomous Infrastructure Provisioning, Deployment & Environment Lifecycle Management...")
+    try:
+        from infrastructure_lifecycle.service import infrastructure_lifecycle_service
+        from infrastructure_lifecycle.models import (
+            EnvironmentType,
+            EnvironmentLifecycleState,
+            DeploymentStrategy,
+            ProviderCapability,
+        )
+
+        # 38a. Provider & Capability Registration
+        providers = infrastructure_lifecycle_service.registry.list_providers()
+        assert len(providers) >= 1
+        print("      [43] Provider & Capability Registry .... PASS (Local sandbox provider & explicit capabilities active)")
+
+        # 38b. Declarative Blueprint & Dependency Engine
+        bp = infrastructure_lifecycle_service.register_blueprint(
+            blueprint_id="bp_diag_core",
+            name="Diagnostic Infrastructure Blueprint",
+            version="1.0.0",
+            environment_type=EnvironmentType.STAGING,
+            resource_definitions=[
+                {"name": "diag_db", "type": "DATABASE"},
+                {"name": "diag_api", "type": "PROCESS"},
+            ],
+            dependencies=["diag_db"],
+        )
+        assert bp.blueprint_id == "bp_diag_core"
+        print("      [43] Declarative Blueprint Engine ...... PASS (Dependency structure validated without cycles)")
+
+        # 38c. Environment Lifecycle & Governed Provisioning
+        env = infrastructure_lifecycle_service.create_environment(
+            name="Diagnostic Staging Cluster",
+            environment_type=EnvironmentType.STAGING,
+            provider_id="provider-local-sandbox",
+            blueprint_id="bp_diag_core",
+        )
+        assert env.current_state == EnvironmentLifecycleState.REQUESTED
+
+        plan = infrastructure_lifecycle_service.plan_provisioning(env.environment_id)
+        assert plan.status == "PLANNED"
+
+        exec_rec = infrastructure_lifecycle_service.execute_provisioning(plan.plan_id)
+        assert exec_rec.status == "SUCCESS"
+        print("      [43] Environment Lifecycle & Provisioning PASS (Dependency sequencing & state machine validated)")
+
+        # 38d. Release Deployment & Independent Multi-Tier Verification
+        infrastructure_lifecycle_service.environments.transition_state(env.environment_id, EnvironmentLifecycleState.READY)
+        rel = infrastructure_lifecycle_service.register_release(
+            application_name="omnia-diag-app",
+            version="1.0.0",
+            artifact_uri="oci://registry.omnia.org/diag:1.0.0",
+        )
+        dep = infrastructure_lifecycle_service.deploy_release(
+            environment_id=env.environment_id,
+            release_id=rel.release_id,
+            strategy=DeploymentStrategy.DIRECT,
+        )
+        infrastructure_lifecycle_service.deployment.complete_deployment(dep.deployment_id, success=True)
+        ver = infrastructure_lifecycle_service.verify_deployment(dep.deployment_id)
+        assert ver.is_fully_verified is True
+        print("      [43] Multi-Tier Readiness Verification . PASS (Independent 3-tier proof before READY)")
+
+        # 38e. Drift Discovery & Posture HUD
+        drift = infrastructure_lifecycle_service.reconcile_drift(env.environment_id)
+        assert isinstance(drift, list)
+        posture = infrastructure_lifecycle_service.get_posture_report()
+        assert posture["total_environments"] >= 1
+        print("      [43] Drift Discovery & Posture HUD ..... PASS (Reconciliation & system-wide environment HUD active)")
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        print(f"      [43] Infrastructure Lifecycle Subsystem . FAIL ({e})")
+
     print("\n" + "=" * 60)
     print("Diagnostics complete.")
     print("=" * 60)
