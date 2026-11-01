@@ -7,7 +7,7 @@ from typing import List, Tuple
 
 logger = logging.getLogger("Omnia.Persistence.Migrations")
 
-CURRENT_SCHEMA_VERSION = 25
+CURRENT_SCHEMA_VERSION = 26
 
 MIGRATION_V1 = """
 -- Schema Version 1: Durable Task Graph & Crash Recovery Tables
@@ -2820,6 +2820,199 @@ CREATE TABLE IF NOT EXISTS ops_postmortem_reports (
 CREATE INDEX IF NOT EXISTS idx_ops_pm_inc ON ops_postmortem_reports(incident_id);
 """
 
+
+MIGRATION_V26 = """
+-- Schema Version 26: Autonomous Reliability Engineering, Resilience Testing & Disaster Recovery
+
+CREATE TABLE IF NOT EXISTS rel_components (
+    component_id TEXT PRIMARY KEY,
+    component_name TEXT NOT NULL,
+    criticality TEXT NOT NULL,
+    owner TEXT NOT NULL,
+    failure_domain TEXT NOT NULL,
+    data_ownership TEXT NOT NULL,
+    dependencies_json TEXT NOT NULL DEFAULT '[]',
+    recovery_procedure TEXT NOT NULL DEFAULT 'DEFAULT_RESTART',
+    backup_strategy TEXT NOT NULL DEFAULT 'SNAPSHOT',
+    redundancy_config TEXT NOT NULL DEFAULT 'N+1',
+    failover_readiness TEXT NOT NULL DEFAULT 'READY',
+    last_assessment_at TEXT,
+    last_recovery_drill_at TEXT,
+    created_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_rel_comp_crit ON rel_components(criticality);
+
+CREATE TABLE IF NOT EXISTS rel_failure_modes (
+    mode_id TEXT PRIMARY KEY,
+    component_id TEXT NOT NULL,
+    failure_mode_name TEXT NOT NULL,
+    potential_causes_json TEXT NOT NULL DEFAULT '[]',
+    local_impact TEXT NOT NULL,
+    downstream_impact TEXT NOT NULL,
+    detectability_score INTEGER NOT NULL DEFAULT 5,
+    severity_score INTEGER NOT NULL DEFAULT 5,
+    probability_score INTEGER NOT NULL DEFAULT 5,
+    risk_priority_number INTEGER NOT NULL DEFAULT 125,
+    is_spof INTEGER NOT NULL DEFAULT 0,
+    existing_controls_json TEXT NOT NULL DEFAULT '[]',
+    recommended_mitigation TEXT,
+    created_at TEXT NOT NULL,
+    FOREIGN KEY (component_id) REFERENCES rel_components(component_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_rel_fm_comp ON rel_failure_modes(component_id);
+CREATE INDEX IF NOT EXISTS idx_rel_fm_spof ON rel_failure_modes(is_spof);
+
+CREATE TABLE IF NOT EXISTS rel_resilience_objectives (
+    objective_id TEXT PRIMARY KEY,
+    component_id TEXT NOT NULL,
+    objective_type TEXT NOT NULL,
+    target_value REAL NOT NULL,
+    unit TEXT NOT NULL,
+    demonstrated_value REAL,
+    is_demonstrated INTEGER NOT NULL DEFAULT 0,
+    verification_evidence TEXT,
+    last_verified_at TEXT,
+    FOREIGN KEY (component_id) REFERENCES rel_components(component_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_rel_obj_comp ON rel_resilience_objectives(component_id);
+
+CREATE TABLE IF NOT EXISTS rel_failure_scenarios (
+    scenario_id TEXT PRIMARY KEY,
+    title TEXT NOT NULL,
+    category TEXT NOT NULL,
+    target_environment TEXT NOT NULL,
+    affected_components_json TEXT NOT NULL DEFAULT '[]',
+    preconditions_json TEXT NOT NULL DEFAULT '[]',
+    injection_method TEXT NOT NULL DEFAULT 'SIMULATION',
+    safety_constraints_json TEXT NOT NULL DEFAULT '[]',
+    expected_behavior TEXT NOT NULL,
+    abort_conditions_json TEXT NOT NULL DEFAULT '[]',
+    created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS rel_fault_experiments (
+    experiment_id TEXT PRIMARY KEY,
+    scenario_id TEXT NOT NULL,
+    hypothesis TEXT NOT NULL,
+    target_environment TEXT NOT NULL,
+    lifecycle_state TEXT NOT NULL DEFAULT 'DEFINED',
+    max_duration_sec REAL NOT NULL DEFAULT 300.0,
+    actual_duration_sec REAL NOT NULL DEFAULT 0.0,
+    containment_successful INTEGER NOT NULL DEFAULT 0,
+    cascading_failure_detected INTEGER NOT NULL DEFAULT 0,
+    approval_token TEXT,
+    approved_by TEXT,
+    started_at TEXT,
+    completed_at TEXT,
+    observations_json TEXT NOT NULL DEFAULT '[]',
+    FOREIGN KEY (scenario_id) REFERENCES rel_failure_scenarios(scenario_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_rel_exp_state ON rel_fault_experiments(lifecycle_state);
+
+CREATE TABLE IF NOT EXISTS rel_backups (
+    backup_id TEXT PRIMARY KEY,
+    data_source TEXT NOT NULL,
+    backup_type TEXT NOT NULL,
+    version TEXT NOT NULL,
+    storage_reference TEXT NOT NULL,
+    checksum_sha256 TEXT NOT NULL,
+    is_encrypted INTEGER NOT NULL DEFAULT 1,
+    retention_days INTEGER NOT NULL DEFAULT 30,
+    record_count INTEGER NOT NULL DEFAULT 0,
+    size_bytes INTEGER NOT NULL DEFAULT 0,
+    validation_status TEXT NOT NULL DEFAULT 'PENDING',
+    last_validated_at TEXT,
+    created_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_rel_bak_source ON rel_backups(data_source);
+CREATE INDEX IF NOT EXISTS idx_rel_bak_status ON rel_backups(validation_status);
+
+CREATE TABLE IF NOT EXISTS rel_backup_validations (
+    validation_id TEXT PRIMARY KEY,
+    backup_id TEXT NOT NULL,
+    status TEXT NOT NULL,
+    checksum_verified INTEGER NOT NULL DEFAULT 0,
+    schema_compatible INTEGER NOT NULL DEFAULT 0,
+    isolated_restore_tested INTEGER NOT NULL DEFAULT 0,
+    record_count_matches INTEGER NOT NULL DEFAULT 0,
+    validation_notes TEXT,
+    validated_at TEXT NOT NULL,
+    FOREIGN KEY (backup_id) REFERENCES rel_backups(backup_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_rel_val_bak ON rel_backup_validations(backup_id);
+
+CREATE TABLE IF NOT EXISTS rel_dr_plans (
+    plan_id TEXT PRIMARY KEY,
+    title TEXT NOT NULL,
+    disaster_scenario TEXT NOT NULL,
+    version INTEGER NOT NULL DEFAULT 1,
+    affected_services_json TEXT NOT NULL DEFAULT '[]',
+    recovery_priority INTEGER NOT NULL DEFAULT 1,
+    strategy TEXT NOT NULL,
+    dependency_order_json TEXT NOT NULL DEFAULT '[]',
+    target_rto_sec REAL NOT NULL DEFAULT 300.0,
+    target_rpo_sec REAL NOT NULL DEFAULT 60.0,
+    is_active INTEGER NOT NULL DEFAULT 1,
+    created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS rel_dr_executions (
+    execution_id TEXT PRIMARY KEY,
+    plan_id TEXT NOT NULL,
+    target_environment TEXT NOT NULL,
+    status TEXT NOT NULL,
+    approval_token TEXT,
+    approved_by TEXT,
+    started_at TEXT NOT NULL,
+    completed_at TEXT,
+    duration_sec REAL NOT NULL DEFAULT 0.0,
+    steps_executed_json TEXT NOT NULL DEFAULT '[]',
+    errors_json TEXT NOT NULL DEFAULT '[]',
+    FOREIGN KEY (plan_id) REFERENCES rel_dr_plans(plan_id)
+);
+
+CREATE TABLE IF NOT EXISTS rel_recovery_verifications (
+    verification_id TEXT PRIMARY KEY,
+    execution_id TEXT NOT NULL,
+    component_id TEXT NOT NULL,
+    service_responsive INTEGER NOT NULL DEFAULT 0,
+    data_integrity_verified INTEGER NOT NULL DEFAULT 0,
+    distributed_state_reconciled INTEGER NOT NULL DEFAULT 0,
+    actual_rto_sec REAL NOT NULL,
+    actual_rpo_sec REAL NOT NULL,
+    rto_compliant INTEGER NOT NULL DEFAULT 0,
+    rpo_compliant INTEGER NOT NULL DEFAULT 0,
+    findings_json TEXT NOT NULL DEFAULT '[]',
+    verified_at TEXT NOT NULL,
+    FOREIGN KEY (execution_id) REFERENCES rel_dr_executions(execution_id)
+);
+
+CREATE TABLE IF NOT EXISTS rel_state_integrity_reports (
+    finding_id TEXT PRIMARY KEY,
+    subsystem TEXT NOT NULL,
+    divergence_type TEXT NOT NULL,
+    severity TEXT NOT NULL,
+    details TEXT,
+    detected_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS rel_resilience_regressions (
+    regression_id TEXT PRIMARY KEY,
+    component_id TEXT NOT NULL,
+    metric_name TEXT NOT NULL,
+    baseline_value REAL NOT NULL,
+    current_value REAL NOT NULL,
+    degradation_pct REAL NOT NULL,
+    detected_at TEXT NOT NULL
+);
+"""
+
 def backup_database(db_path: str, backup_dir: str = "persistence_backups") -> str:
     """Creates a timestamped snapshot of the SQLite database prior to any schema modification."""
     if not os.path.exists(db_path):
@@ -3130,6 +3323,18 @@ def apply_migrations(db_path: str) -> int:
             conn.commit()
             logger.info("Migration v25 applied successfully.")
             current_version = 25
+
+        
+        if current_version < 26:
+            logger.info("Applying Migration v26 (Autonomous Reliability Engineering & Disaster Recovery Tables)...")
+            cursor.executescript(MIGRATION_V26)
+            cursor.execute(
+                "INSERT INTO schema_migrations (version, applied_at, description) VALUES (?, ?, ?)",
+                (26, time.time(), "Autonomous Reliability Engineering, Resilience Testing & Disaster Recovery Engine tables")
+            )
+            conn.commit()
+            logger.info("Migration v26 applied successfully.")
+            current_version = 26
 
         return current_version
     except Exception as e:

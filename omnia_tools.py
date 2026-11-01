@@ -5664,7 +5664,217 @@ def investigate_and_recover_incident(
     except Exception as e:
         return json.dumps({"success": False, "error": str(e)}, indent=2)
 
+
+# --- Module 41: Autonomous Reliability Engineering, Resilience Testing & Disaster Recovery ---
+@tool
+def register_reliability_component(
+    component_id: str,
+    component_name: str,
+    criticality: str = "HIGH",
+    failure_domain: str = "PROCESS",
+    data_ownership: str = "STATELESS",
+    redundancy_config: str = "N+1",
+    dependencies: Optional[str] = None,
+) -> str:
+    """Registers or updates a critical subsystem component in the reliability inventory."""
+    from reliability_engineering.service import reliability_engineering_service
+    from reliability_engineering.models import ComponentReliabilityCriticality, FailureDomain
+    import json
+    try:
+        crit = ComponentReliabilityCriticality[criticality.upper()] if criticality.upper() in ComponentReliabilityCriticality.__members__ else ComponentReliabilityCriticality.HIGH
+        fdom = FailureDomain[failure_domain.upper()] if failure_domain.upper() in FailureDomain.__members__ else FailureDomain.PROCESS
+        dep_list = json.loads(dependencies) if dependencies and dependencies.startswith("[") else ([d.strip() for d in dependencies.split(",")] if dependencies else [])
+        rec = reliability_engineering_service.register_component(
+            component_id=component_id,
+            component_name=component_name,
+            criticality=crit,
+            failure_domain=fdom,
+            data_ownership=data_ownership,
+            redundancy_config=redundancy_config,
+            dependencies=dep_list,
+        )
+        return json.dumps({
+            "success": True,
+            "component_id": rec.component_id,
+            "component_name": rec.component_name,
+            "criticality": rec.criticality.value,
+            "failure_domain": rec.failure_domain.value,
+            "failover_readiness": rec.failover_readiness.value,
+        }, indent=2)
+    except Exception as e:
+        return json.dumps({"success": False, "error": str(e)}, indent=2)
+
+@tool
+def perform_failure_mode_analysis(
+    component_id: str,
+    failure_mode_name: str,
+    potential_causes: str,
+    local_impact: str,
+    downstream_impact: str,
+    detectability_score: int = 5,
+    severity_score: int = 5,
+    probability_score: int = 5,
+    existing_controls: Optional[str] = None,
+    recommended_mitigation: str = "",
+) -> str:
+    """Performs Failure Mode and Effects Analysis (FMEA), computes RPN, and identifies SPOFs."""
+    from reliability_engineering.service import reliability_engineering_service
+    import json
+    try:
+        causes = json.loads(potential_causes) if potential_causes and potential_causes.startswith("[") else ([c.strip() for c in potential_causes.split(",")] if potential_causes else [])
+        controls = json.loads(existing_controls) if existing_controls and existing_controls.startswith("[") else ([c.strip() for c in existing_controls.split(",")] if existing_controls else [])
+        fm = reliability_engineering_service.evaluate_failure_mode(
+            component_id=component_id,
+            failure_mode_name=failure_mode_name,
+            potential_causes=causes,
+            local_impact=local_impact,
+            downstream_impact=downstream_impact,
+            detectability_score=detectability_score,
+            severity_score=severity_score,
+            probability_score=probability_score,
+            existing_controls=controls,
+            recommended_mitigation=recommended_mitigation,
+        )
+        return json.dumps({
+            "success": True,
+            "mode_id": fm.mode_id,
+            "component_id": fm.component_id,
+            "risk_priority_number": fm.risk_priority_number,
+            "is_spof": fm.is_spof,
+            "recommended_mitigation": fm.recommended_mitigation,
+        }, indent=2)
+    except Exception as e:
+        return json.dumps({"success": False, "error": str(e)}, indent=2)
+
+@tool
+def generate_failure_scenario(
+    title: str,
+    category: str,
+    affected_components: str,
+    expected_behavior: str,
+    target_environment: str = "ISOLATED_SANDBOX",
+) -> str:
+    """Synthesizes a controlled failure scenario with strict preconditions and abort triggers."""
+    from reliability_engineering.service import reliability_engineering_service
+    import json
+    try:
+        comps = json.loads(affected_components) if affected_components and affected_components.startswith("[") else ([c.strip() for c in affected_components.split(",")] if affected_components else [])
+        sc = reliability_engineering_service.generate_scenario(
+            title=title,
+            category=category,
+            affected_components=comps,
+            expected_behavior=expected_behavior,
+            target_environment=target_environment,
+        )
+        return json.dumps({
+            "success": True,
+            "scenario_id": sc.scenario_id,
+            "title": sc.title,
+            "category": sc.category,
+            "target_environment": sc.target_environment,
+            "safety_constraints": sc.safety_constraints,
+        }, indent=2)
+    except Exception as e:
+        return json.dumps({"success": False, "error": str(e)}, indent=2)
+
+@tool
+def execute_resilience_experiment(
+    scenario_id: str,
+    hypothesis: str,
+    approval_token: str,
+    target_environment: str = "ISOLATED_SANDBOX",
+) -> str:
+    """Executes a governed fault injection experiment requiring a mandatory Module 20 approval token."""
+    from reliability_engineering.service import reliability_engineering_service
+    import json
+    try:
+        exp = reliability_engineering_service.run_fault_experiment(
+            scenario_id=scenario_id,
+            hypothesis=hypothesis,
+            approval_token=approval_token,
+            target_environment=target_environment,
+        )
+        return json.dumps({
+            "success": True,
+            "experiment_id": exp.experiment_id,
+            "lifecycle_state": exp.lifecycle_state.value,
+            "containment_successful": exp.containment_successful,
+            "cascading_failure_detected": exp.cascading_failure_detected,
+            "actual_duration_sec": exp.actual_duration_sec,
+        }, indent=2)
+    except Exception as e:
+        return json.dumps({"success": False, "error": str(e)}, indent=2)
+
+@tool
+def validate_backup_integrity(
+    backup_id: str,
+    simulate_restore: bool = True,
+    simulate_corruption: bool = False,
+) -> str:
+    """Performs cryptographic checksum checks, schema audits, and isolated sandbox restore drills."""
+    from reliability_engineering.service import reliability_engineering_service
+    import json
+    try:
+        val = reliability_engineering_service.validate_backup_integrity(
+            backup_id=backup_id,
+            simulate_restore=simulate_restore,
+            simulate_corruption=simulate_corruption,
+        )
+        return json.dumps({
+            "success": True,
+            "validation_id": val.validation_id,
+            "backup_id": val.backup_id,
+            "status": val.status.value,
+            "checksum_verified": val.checksum_verified,
+            "isolated_restore_tested": val.isolated_restore_tested,
+            "validation_notes": val.validation_notes,
+        }, indent=2)
+    except Exception as e:
+        return json.dumps({"success": False, "error": str(e)}, indent=2)
+
+@tool
+def orchestrate_and_verify_disaster_recovery(
+    plan_id: str,
+    approval_token: str,
+    component_id: str,
+    actual_rto_sec: float = 45.0,
+    actual_rpo_sec: float = 10.0,
+) -> str:
+    """Executes a disaster recovery restoration drill via Module 20 token and independently verifies RTO/RPO."""
+    from reliability_engineering.service import reliability_engineering_service
+    import json
+    try:
+        exec_rec = reliability_engineering_service.execute_recovery_drill(
+            plan_id=plan_id,
+            approval_token=approval_token,
+        )
+        ver = reliability_engineering_service.verify_recovery(
+            execution_id=exec_rec.execution_id,
+            component_id=component_id,
+            actual_rto_sec=actual_rto_sec,
+            actual_rpo_sec=actual_rpo_sec,
+        )
+        return json.dumps({
+            "success": True,
+            "execution_id": exec_rec.execution_id,
+            "verification_id": ver.verification_id,
+            "rto_compliant": ver.rto_compliant,
+            "rpo_compliant": ver.rpo_compliant,
+            "actual_rto_sec": ver.actual_rto_sec,
+            "actual_rpo_sec": ver.actual_rpo_sec,
+            "findings": ver.findings,
+        }, indent=2)
+    except Exception as e:
+        return json.dumps({"success": False, "error": str(e)}, indent=2)
+
 OMNIA_ALL_TOOLS = [
+    register_reliability_component,
+    perform_failure_mode_analysis,
+    generate_failure_scenario,
+    execute_resilience_experiment,
+    validate_backup_integrity,
+    orchestrate_and_verify_disaster_recovery,
+
     register_operations_service,
     record_service_health_observation,
     ingest_operations_telemetry,

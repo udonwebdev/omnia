@@ -2942,6 +2942,167 @@ async def run_diagnostics():
         traceback.print_exc()
         print(f"      [40] Operations Center Subsystem ....... FAIL ({e})")
 
+    # 36. Module 41: Autonomous Reliability Engineering, Resilience Testing & Disaster Recovery
+    print("\n[36/36] Checking Module 41: Autonomous Reliability Engineering, Resilience Testing & Disaster Recovery...")
+    try:
+        from reliability_engineering.service import reliability_engineering_service
+        from reliability_engineering.models import (
+            ComponentReliabilityCriticality,
+            FailureDomain,
+            FailoverReadinessState,
+            RecoveryStrategy,
+            BackupType,
+            ValidationStatus,
+            ExperimentLifecycleState,
+            ResilienceObjectiveRecord,
+            ResilienceObjectiveType,
+        )
+
+        test_suffix = uuid.uuid4().hex[:6]
+        c_db_id = f"diag-comp-db-{test_suffix}"
+        c_api_id = f"diag-comp-api-{test_suffix}"
+
+        # 36a. Reliability Component Catalog & Hierarchy
+        comp_db = reliability_engineering_service.register_component(
+            component_id=c_db_id,
+            component_name="Diagnostics Database",
+            criticality=ComponentReliabilityCriticality.MISSION_CRITICAL,
+            failure_domain=FailureDomain.ZONE,
+            redundancy_config="N+2",
+            failover_readiness=FailoverReadinessState.READY,
+        )
+        assert comp_db.component_id == c_db_id
+
+        comp_api = reliability_engineering_service.register_component(
+            component_id=c_api_id,
+            component_name="Diagnostics API",
+            criticality=ComponentReliabilityCriticality.HIGH,
+            failure_domain=FailureDomain.PROCESS,
+            dependencies=[c_db_id],
+            redundancy_config="NONE",
+        )
+        assert c_db_id in comp_api.dependencies
+        print("      [41] Component Inventory & Topology .... PASS (Hierarchical dependency & redundancy tracking)")
+
+        # 36b. FMEA & Deterministic SPOF Detection
+        fm = reliability_engineering_service.evaluate_failure_mode(
+            component_id=c_api_id,
+            failure_mode_name="ProcessPanic",
+            potential_causes=["Uncaught nil reference in worker loop"],
+            local_impact="Pod crash loop",
+            downstream_impact="Elevated HTTP 502 error rates",
+            severity_score=9,
+            probability_score=6,
+            detectability_score=5,
+            existing_controls=[],
+        )
+        assert fm.risk_priority_number == 270
+        assert fm.is_spof is True
+        print("      [41] Failure Mode Analysis (FMEA) ...... PASS (Calculated RPN=270, auto-flagged Single Point of Failure)")
+
+        # 36c. Failure Scenario & Fault Injection with Module 20 Human Token Gate
+        sc = reliability_engineering_service.generate_scenario(
+            title=f"Diagnostics Network Latency Injection {test_suffix}",
+            category="NETWORK",
+            affected_components=[c_api_id],
+            expected_behavior="Circuits open and fallback payloads return without timeout cascades",
+            target_environment="ISOLATED_SANDBOX",
+        )
+        assert sc.target_environment == "ISOLATED_SANDBOX"
+
+        # Gate enforcement: empty token must be rejected
+        unauth_blocked = False
+        try:
+            reliability_engineering_service.run_fault_experiment(
+                scenario_id=sc.scenario_id,
+                hypothesis="Simulated latency stays isolated without downstream exhaustion",
+                approval_token="",
+            )
+        except PermissionError:
+            unauth_blocked = True
+        assert unauth_blocked is True
+
+        # Authorized execution
+        exp = reliability_engineering_service.run_fault_experiment(
+            scenario_id=sc.scenario_id,
+            hypothesis="Simulated latency stays isolated without downstream exhaustion",
+            approval_token="OMNIA_M20_CRYPTO_TOKEN_FAULT_DIAG_8821",
+        )
+        assert exp.lifecycle_state == ExperimentLifecycleState.COMPLETED
+        assert exp.containment_successful is True
+        print("      [41] Fault Injection & Module 20 Gate .. PASS (Enforced approval token gate & containment verification)")
+
+        # 36d. Backup Inventory & Cryptographic Validation Drill
+        backup = reliability_engineering_service.register_backup(
+            data_source=f"datastore_{test_suffix}.db",
+            backup_type=BackupType.SNAPSHOT,
+            version="26.0.0",
+            storage_reference=f"gs://omnia-backups/diag/{test_suffix}/snapshot.bin",
+            record_count=5000,
+            size_bytes=1048576,
+        )
+        assert len(backup.checksum_sha256) == 64
+
+        val = reliability_engineering_service.validate_backup_integrity(
+            backup_id=backup.backup_id,
+            simulate_restore=True,
+            simulate_corruption=False,
+        )
+        assert val.status == ValidationStatus.VERIFIED
+        assert val.checksum_verified is True
+        assert val.isolated_restore_tested is True
+        print("      [41] Backup Validation & Sandbox Drill . PASS (Cryptographic SHA-256 digest & isolated restore test)")
+
+        # 36e. Disaster Recovery Plan, Execution Gate & Demonstrated Proof
+        plan = reliability_engineering_service.create_dr_plan(
+            title=f"Disaster Recovery Drill {test_suffix}",
+            disaster_scenario="Simulated multi-zone power failure",
+            affected_services=[c_db_id, c_api_id],
+            dependency_order=[c_db_id, c_api_id],
+            strategy=RecoveryStrategy.RESTORE_FROM_BACKUP,
+            target_rto_sec=120.0,
+            target_rpo_sec=30.0,
+        )
+
+        dr_exec = reliability_engineering_service.execute_recovery_drill(
+            plan_id=plan.plan_id,
+            approval_token="OMNIA_M20_DR_DRILL_AUTHORIZATION_KEY_4421",
+        )
+        assert dr_exec.status == "COMPLETED"
+
+        ver = reliability_engineering_service.verify_recovery(
+            execution_id=dr_exec.execution_id,
+            component_id=c_db_id,
+            actual_rto_sec=42.0,
+            actual_rpo_sec=8.5,
+            service_responsive=True,
+            data_integrity_verified=True,
+        )
+        assert ver.rto_compliant is True
+        assert ver.rpo_compliant is True
+        assert ver.actual_rto_sec == 42.0
+        print("      [41] DR Drill & RTO/RPO Verification ... PASS (Demonstrated RTO=42.0s < 120.0s, RPO=8.5s < 30.0s)")
+
+        # 36f. Resilience Regression & Reliability Overview
+        regr = reliability_engineering_service.check_resilience_regression(
+            component_id=c_db_id,
+            metric_name="RECOVERY_TIME_OBJECTIVE_SEC",
+            baseline_value=42.0,
+            current_value=98.0,
+        )
+        assert regr is not None
+        assert regr.degradation_pct > 100.0
+
+        overview = reliability_engineering_service.get_reliability_overview()
+        assert overview["total_monitored_components"] >= 2
+        assert overview["single_points_of_failure_count"] >= 1
+        print("      [41] Regression Alerting & Executive HUD  PASS (Detected +133.3% RTO regression & compiled posture)")
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        print(f"      [41] Reliability Engineering Subsystem . FAIL ({e})")
+
     print("\n" + "=" * 60)
     print("Diagnostics complete.")
     print("=" * 60)
