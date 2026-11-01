@@ -7029,6 +7029,204 @@ def seal_security_evidence_package(
         return json.dumps({"success": False, "error": str(e)}, indent=2)
 
 
+
+# ===========================================================================
+# MODULE 48: AUTONOMOUS DIGITAL FORENSICS, EVIDENCE PRESERVATION & INCIDENT INVESTIGATION INTELLIGENCE
+# ===========================================================================
+
+@tool
+def create_forensic_investigation_case(
+    title: str,
+    description: str,
+    incident_id: Optional[str] = None,
+    allowed_sources: Optional[List[str]] = None,
+    lead_investigator: str = "omnia_forensic_agent",
+) -> str:
+    """Initializes and scopes a formal digital forensics investigation case with strict authorization boundaries."""
+    from forensics.service import forensics_service
+    import json
+    try:
+        scope = {"allowed_sources": allowed_sources or ["all"]}
+        case = forensics_service.open_investigation_case(
+            title=title,
+            description=description,
+            incident_id=incident_id,
+            scope_definition=scope,
+            lead_investigator=lead_investigator
+        )
+        return json.dumps({
+            "success": True,
+            "case_id": case.case_id,
+            "title": case.title,
+            "status": case.status.value,
+            "lead_investigator": case.lead_investigator,
+            "scope": case.scope_definition
+        }, indent=2)
+    except Exception as e:
+        return json.dumps({"success": False, "error": str(e)}, indent=2)
+
+
+@tool
+def acquire_authorized_forensic_artifact(
+    case_id: str,
+    source_type: str,
+    source_identifier: str,
+    artifact_name: str,
+    payload_content: str,
+    classification: str = "CONFIDENTIAL",
+    approval_token: Optional[str] = None,
+    operator: str = "omnia_forensic_agent",
+) -> str:
+    """Acquires and cryptographically preserves an evidence artifact in the vault, logging to the chain-of-custody."""
+    from forensics.service import forensics_service
+    from forensics.models import ArtifactType
+    import json
+    try:
+        raw_bytes = payload_content.encode("utf-8")
+        art_type = ArtifactType[source_type.upper()]
+        artifact = forensics_service.acquire_artifact(
+            case_id=case_id,
+            source_type=art_type,
+            source_identifier=source_identifier,
+            artifact_name=artifact_name,
+            raw_data=raw_bytes,
+            classification=classification,
+            approval_token=approval_token,
+            operator=operator
+        )
+        return json.dumps({
+            "success": True,
+            "artifact_id": artifact.artifact_id,
+            "case_id": artifact.case_id,
+            "sha256_hash": artifact.sha256_hash,
+            "size_bytes": artifact.size_bytes,
+            "storage_uri": artifact.storage_uri,
+            "integrity_status": artifact.integrity_status
+        }, indent=2)
+    except Exception as e:
+        return json.dumps({"success": False, "error": str(e)}, indent=2)
+
+
+@tool
+def verify_evidence_chain_of_custody(
+    case_id: str,
+    artifact_id: str,
+) -> str:
+    """Validates the unbroken cryptographic chain-of-custody and live disk hash for an evidence artifact."""
+    from forensics.service import forensics_service
+    import json
+    try:
+        res = forensics_service.verify_artifact_custody(case_id=case_id, artifact_id=artifact_id)
+        return json.dumps(res, indent=2)
+    except Exception as e:
+        return json.dumps({"valid": False, "error": str(e)}, indent=2)
+
+
+@tool
+def reconstruct_forensic_timeline(
+    case_id: str,
+    actor_filter: Optional[str] = None,
+    category_filter: Optional[str] = None,
+) -> str:
+    """Parses case artifacts into normalized UTC timeline events and performs cross-source correlation."""
+    from forensics.service import forensics_service
+    import json
+    try:
+        events = forensics_service.reconstruct_case_timeline(case_id)
+        correlations = forensics_service.correlate_evidence(case_id)
+        filtered_events = events
+        if actor_filter:
+            filtered_events = [e for e in filtered_events if e.actor and actor_filter.lower() in e.actor.lower()]
+        if category_filter:
+            filtered_events = [e for e in filtered_events if e.event_category.upper() == category_filter.upper()]
+
+        return json.dumps({
+            "success": True,
+            "case_id": case_id,
+            "total_events": len(events),
+            "filtered_events_count": len(filtered_events),
+            "correlations_detected": len(correlations),
+            "timeline": [
+                {
+                    "event_id": e.event_id,
+                    "timestamp_utc": e.timestamp_utc,
+                    "raw_timestamp": e.raw_timestamp,
+                    "category": e.event_category,
+                    "actor": e.actor,
+                    "summary": e.summary,
+                    "reliability": e.reliability_tier.value
+                }
+                for e in filtered_events[:20]  # First 20 chronological events
+            ]
+        }, indent=2)
+    except Exception as e:
+        return json.dumps({"success": False, "error": str(e)}, indent=2)
+
+
+@tool
+def evaluate_forensic_hypothesis(
+    case_id: str,
+    title: str,
+    theory_description: str,
+    supporting_evidence: Optional[List[str]] = None,
+    contradictory_evidence: Optional[List[str]] = None,
+    competing_with_id: Optional[str] = None,
+) -> str:
+    """Creates and evaluates a competing hypothesis with explicit supporting and contradictory evidence scoring."""
+    from forensics.service import forensics_service
+    import json
+    try:
+        hypo = forensics_service.create_hypothesis(
+            case_id=case_id,
+            title=title,
+            theory_description=theory_description,
+            competing_with_id=competing_with_id
+        )
+        res = forensics_service.evaluate_hypothesis(
+            hypothesis_id=hypo.hypothesis_id,
+            supporting_evidence=supporting_evidence,
+            contradictory_evidence=contradictory_evidence
+        )
+        return json.dumps({
+            "success": True,
+            "hypothesis_id": hypo.hypothesis_id,
+            "title": hypo.title,
+            "status": res.get("status"),
+            "support_score": res.get("support_score"),
+            "refutation_score": res.get("refutation_score"),
+            "verdict_rationale": res.get("rationale")
+        }, indent=2)
+    except Exception as e:
+        return json.dumps({"success": False, "error": str(e)}, indent=2)
+
+
+@tool
+def generate_structured_forensic_report(
+    case_id: str,
+    investigator: str = "omnia_forensic_agent",
+) -> str:
+    """Synthesizes verified evidence into a cryptographically sealed report strictly categorized into FACTS, INFERENCES, HYPOTHESES, and UNKNOWNS."""
+    from forensics.service import forensics_service
+    import json
+    try:
+        report = forensics_service.generate_report(case_id=case_id, investigator=investigator)
+        return json.dumps({
+            "success": True,
+            "report_id": report.report_id,
+            "case_id": report.case_id,
+            "title": report.title,
+            "executive_summary": report.executive_summary,
+            "facts_count": len(report.facts),
+            "inferences_count": len(report.inferences),
+            "hypotheses_count": len(report.hypotheses),
+            "unknowns_count": len(report.unknowns),
+            "cryptographic_seal": report.cryptographic_seal,
+            "created_at": report.created_at
+        }, indent=2)
+    except Exception as e:
+        return json.dumps({"success": False, "error": str(e)}, indent=2)
+
+
 OMNIA_ALL_TOOLS = [
     register_security_telemetry_source,
     ingest_and_evaluate_security_telemetry,
@@ -7338,6 +7536,12 @@ OMNIA_ALL_TOOLS = [
     generate_and_simulate_workflow_optimizations,
     execute_controlled_workflow_experiment,
     authorize_workflow_change_governance,
+    create_forensic_investigation_case,
+    acquire_authorized_forensic_artifact,
+    verify_evidence_chain_of_custody,
+    reconstruct_forensic_timeline,
+    evaluate_forensic_hypothesis,
+    generate_structured_forensic_report,
 ]
 
 # Backward compatibility alias

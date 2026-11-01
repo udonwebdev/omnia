@@ -3684,7 +3684,7 @@ async def run_diagnostics():
         print(f"      [46] App Security Testing Subsystem ... FAIL ({e})")
 
     # 42. Module 47: Autonomous Threat Detection, Behavioral Analytics & Real-Time Security Operations Intelligence
-    print("\n[42/42] Checking Module 47: Autonomous Threat Detection, Behavioral Analytics & Real-Time Security Operations Intelligence...")
+    print("\n[42/43] Checking Module 47: Autonomous Threat Detection, Behavioral Analytics & Real-Time Security Operations Intelligence...")
     from secops import (
         secops_service,
         BaselineStatus,
@@ -3729,7 +3729,7 @@ async def run_diagnostics():
         print("      [47] Telemetry Source & Normalization .. PASS (Unified schema, SHA-256 payload integrity & health)")
 
         # 42b. Behavioral Baselines & Anomaly Detection
-        entity = "diag_worker_bot"
+        entity = f"diag_worker_bot_{int(time.time())}"
         metric = "api_request_rate"
         b_init = secops_service.baselines.update_entity_metric(entity, "SERVICE_ACCOUNT", metric, 5.0)
         assert b_init.status == BaselineStatus.COLD_START
@@ -3822,6 +3822,96 @@ async def run_diagnostics():
         import traceback
         traceback.print_exc()
         print(f"      [47] Threat Detection Subsystem ........ FAIL ({e})")
+
+
+    # Stage 43: Autonomous Digital Forensics, Evidence Preservation & Incident Investigation Intelligence
+    print("\n[43/43] Checking Module 48: Autonomous Digital Forensics, Evidence Preservation & Incident Investigation Intelligence...")
+    from forensics import (
+        forensics_service,
+        CaseStatus,
+        ArtifactType,
+        CustodyOperation,
+        HypothesisStatus,
+        StatementCategory,
+        EvidenceReliabilityTier,
+    )
+    import json
+
+    try:
+        # 1. Open and scope a forensic investigation case
+        f_case = forensics_service.open_investigation_case(
+            title="Diagnostics Forensic Verification Drill",
+            description="Testing automated cryptographic evidence preservation and timeline analysis",
+            incident_id="diag_inc_48",
+            scope_definition={"allowed_sources": ["identity_audit", "cloud_audit"]},
+            lead_investigator="forensics_agent_48",
+        )
+        assert f_case.status == CaseStatus.OPEN
+        assert f_case.lead_investigator == "forensics_agent_48"
+        print("      [48] Forensic Case Creation ............ PASS (Scoped case initialized)")
+
+        # 2. Acquire and preserve cryptographic evidence
+        test_payload = json.dumps([
+            {"user": "diag_user@corp.internal", "action": "LOGIN", "timestamp": "2026-11-01T05:00:00Z"},
+            {"user": "diag_user@corp.internal", "action": "EXPORT", "timestamp": "2026-11-01T05:05:00Z"}
+        ]).encode("utf-8")
+        f_art = forensics_service.acquire_artifact(
+            case_id=f_case.case_id,
+            source_type=ArtifactType.IDENTITY_AUDIT,
+            source_identifier="idp_audit_stream",
+            artifact_name="diag_idp_audit.json",
+            raw_data=test_payload,
+            operator="forensics_agent_48"
+        )
+        assert f_art.integrity_status == "VERIFIED"
+        assert len(f_art.sha256_hash) == 64
+        print("      [48] Evidence Vault & Preservation ..... PASS (SHA-256 hashed and vault-stored)")
+
+        # 3. Verify unbroken chain of custody
+        cust_check = forensics_service.verify_artifact_custody(f_case.case_id, f_art.artifact_id)
+        assert cust_check["valid"] is True
+        assert cust_check["integrity_status"] == "VERIFIED_UNBROKEN"
+        print("      [48] Chain of Custody Integrity ........ PASS (Append-only ledger verified unbroken)")
+
+        # 4. Reconstruct timeline and perform correlation
+        f_events = forensics_service.reconstruct_case_timeline(f_case.case_id)
+        assert len(f_events) == 2
+        f_corrs = forensics_service.correlate_evidence(f_case.case_id)
+        print(f"      [48] Timeline & Correlation ............ PASS ({len(f_events)} events reconstructed, UTC normalized)")
+
+        # 5. Formulate and score competing hypotheses
+        h1 = forensics_service.create_hypothesis(
+            case_id=f_case.case_id,
+            title="Diagnostics Malicious Intrusion",
+            theory_description="Attacker performed exfiltration"
+        )
+        eval_h1 = forensics_service.evaluate_hypothesis(
+            hypothesis_id=h1.hypothesis_id,
+            supporting_evidence=["Observed anomalous data export event", "Second corroborating telemetry source"]
+        )
+        assert eval_h1["status"] == HypothesisStatus.SUPPORTED.value
+        print("      [48] Hypothesis-Driven Engine .......... PASS (Competing theory scored & supported)")
+
+        # 6. Apply legal hold with approval token
+        hold = forensics_service.apply_legal_hold(
+            case_id=f_case.case_id,
+            hold_reason="Preservation for compliance audit",
+            applied_by="forensics_agent_48",
+            approval_token="appr_hold_diag_48"
+        )
+        assert hold.is_active is True
+        print("      [48] Legal Hold Governance ............. PASS (Module 20 approval validated)")
+
+        # 7. Synthesize structured report with epistemic tags
+        rep = forensics_service.generate_report(f_case.case_id, investigator="forensics_agent_48")
+        assert len(rep.facts) > 0
+        assert len(rep.cryptographic_seal) == 64
+        print("      [48] Epistemic Report Generation ....... PASS (Cryptographically sealed FACT/INFERENCE report)")
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        print(f"      [48] Forensics Subsystem ............... FAIL ({e})")
 
     print("\n" + "=" * 60)
     print("Diagnostics complete.")

@@ -7,7 +7,7 @@ from typing import List, Tuple
 
 logger = logging.getLogger("Omnia.Persistence.Migrations")
 
-CURRENT_SCHEMA_VERSION = 32
+CURRENT_SCHEMA_VERSION = 33
 
 MIGRATION_V1 = """
 -- Schema Version 1: Durable Task Graph & Crash Recovery Tables
@@ -4269,6 +4269,175 @@ def backup_database(db_path: str, backup_dir: str = "persistence_backups") -> st
     logger.info(f"Database backed up to: {backup_path}")
     return backup_path
 
+
+# ---------------------------------------------------------------------------
+# Migration v33: Autonomous Digital Forensics, Evidence Preservation & Incident Investigation Intelligence
+# ---------------------------------------------------------------------------
+MIGRATION_V33 = """
+-- Forensic investigation cases
+CREATE TABLE IF NOT EXISTS for_cases (
+    case_id TEXT PRIMARY KEY,
+    title TEXT NOT NULL,
+    description TEXT,
+    incident_id TEXT,
+    scope_definition TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'OPEN',
+    lead_investigator TEXT NOT NULL,
+    retention_days INTEGER NOT NULL DEFAULT 365,
+    legal_hold_active INTEGER NOT NULL DEFAULT 0,
+    created_at REAL NOT NULL,
+    updated_at REAL NOT NULL,
+    closed_at REAL
+);
+CREATE INDEX IF NOT EXISTS idx_for_cases_status ON for_cases(status);
+CREATE INDEX IF NOT EXISTS idx_for_cases_incident_id ON for_cases(incident_id);
+
+-- Forensic evidence artifacts
+CREATE TABLE IF NOT EXISTS for_evidence_artifacts (
+    artifact_id TEXT PRIMARY KEY,
+    case_id TEXT NOT NULL,
+    source_type TEXT NOT NULL,
+    source_identifier TEXT NOT NULL,
+    artifact_name TEXT NOT NULL,
+    classification TEXT NOT NULL,
+    sha256_hash TEXT NOT NULL,
+    size_bytes INTEGER NOT NULL,
+    storage_uri TEXT NOT NULL,
+    parser_type TEXT NOT NULL,
+    metadata_json TEXT,
+    acquired_at REAL NOT NULL,
+    acquired_by TEXT NOT NULL,
+    integrity_status TEXT NOT NULL DEFAULT 'VERIFIED',
+    FOREIGN KEY(case_id) REFERENCES for_cases(case_id)
+);
+CREATE INDEX IF NOT EXISTS idx_for_artifacts_case_id ON for_evidence_artifacts(case_id);
+CREATE INDEX IF NOT EXISTS idx_for_artifacts_sha256 ON for_evidence_artifacts(sha256_hash);
+
+-- Append-only chain of custody records
+CREATE TABLE IF NOT EXISTS for_chain_of_custody (
+    custody_id TEXT PRIMARY KEY,
+    artifact_id TEXT NOT NULL,
+    case_id TEXT NOT NULL,
+    operation TEXT NOT NULL,
+    actor TEXT NOT NULL,
+    reason TEXT NOT NULL,
+    sha256_verified TEXT NOT NULL,
+    integrity_ok INTEGER NOT NULL DEFAULT 1,
+    approval_token TEXT,
+    recorded_at REAL NOT NULL,
+    FOREIGN KEY(artifact_id) REFERENCES for_evidence_artifacts(artifact_id),
+    FOREIGN KEY(case_id) REFERENCES for_cases(case_id)
+);
+CREATE INDEX IF NOT EXISTS idx_for_custody_artifact ON for_chain_of_custody(artifact_id);
+CREATE INDEX IF NOT EXISTS idx_for_custody_case ON for_chain_of_custody(case_id);
+
+-- Evidence acquisition jobs
+CREATE TABLE IF NOT EXISTS for_acquisition_jobs (
+    job_id TEXT PRIMARY KEY,
+    case_id TEXT NOT NULL,
+    target_source TEXT NOT NULL,
+    source_type TEXT NOT NULL,
+    parameters_json TEXT,
+    status TEXT NOT NULL DEFAULT 'PENDING',
+    artifacts_collected INTEGER NOT NULL DEFAULT 0,
+    error_message TEXT,
+    approval_token TEXT,
+    initiated_by TEXT NOT NULL,
+    started_at REAL NOT NULL,
+    completed_at REAL,
+    FOREIGN KEY(case_id) REFERENCES for_cases(case_id)
+);
+CREATE INDEX IF NOT EXISTS idx_for_acq_case ON for_acquisition_jobs(case_id);
+
+-- Normalized timeline events
+CREATE TABLE IF NOT EXISTS for_timeline_events (
+    event_id TEXT PRIMARY KEY,
+    case_id TEXT NOT NULL,
+    artifact_id TEXT,
+    timestamp_utc REAL NOT NULL,
+    raw_timestamp TEXT NOT NULL,
+    clock_drift_seconds REAL NOT NULL DEFAULT 0.0,
+    event_category TEXT NOT NULL,
+    action TEXT NOT NULL,
+    actor TEXT,
+    source_entity TEXT,
+    target_entity TEXT,
+    summary TEXT NOT NULL,
+    details_json TEXT,
+    reliability_tier TEXT NOT NULL DEFAULT 'CONFIRMED',
+    FOREIGN KEY(case_id) REFERENCES for_cases(case_id)
+);
+CREATE INDEX IF NOT EXISTS idx_for_timeline_case_time ON for_timeline_events(case_id, timestamp_utc);
+CREATE INDEX IF NOT EXISTS idx_for_timeline_actor ON for_timeline_events(actor);
+
+-- Cross-source evidence correlations
+CREATE TABLE IF NOT EXISTS for_evidence_correlations (
+    correlation_id TEXT PRIMARY KEY,
+    case_id TEXT NOT NULL,
+    source_artifact_id TEXT NOT NULL,
+    target_artifact_id TEXT NOT NULL,
+    correlation_type TEXT NOT NULL,
+    correlation_key TEXT NOT NULL,
+    confidence_score REAL NOT NULL,
+    notes TEXT,
+    created_at REAL NOT NULL,
+    FOREIGN KEY(case_id) REFERENCES for_cases(case_id)
+);
+CREATE INDEX IF NOT EXISTS idx_for_correl_case ON for_evidence_correlations(case_id);
+
+-- Investigation hypotheses
+CREATE TABLE IF NOT EXISTS for_hypotheses (
+    hypothesis_id TEXT PRIMARY KEY,
+    case_id TEXT NOT NULL,
+    title TEXT NOT NULL,
+    theory_description TEXT NOT NULL,
+    competing_with_id TEXT,
+    status TEXT NOT NULL DEFAULT 'PROPOSED',
+    support_score REAL NOT NULL DEFAULT 0.0,
+    refutation_score REAL NOT NULL DEFAULT 0.0,
+    supporting_evidence_json TEXT,
+    contradictory_evidence_json TEXT,
+    verdict_rationale TEXT,
+    created_at REAL NOT NULL,
+    updated_at REAL NOT NULL,
+    FOREIGN KEY(case_id) REFERENCES for_cases(case_id)
+);
+CREATE INDEX IF NOT EXISTS idx_for_hypo_case ON for_hypotheses(case_id);
+
+-- Structured forensic reports
+CREATE TABLE IF NOT EXISTS for_reports (
+    report_id TEXT PRIMARY KEY,
+    case_id TEXT NOT NULL,
+    title TEXT NOT NULL,
+    executive_summary TEXT NOT NULL,
+    facts_json TEXT NOT NULL,
+    inferences_json TEXT NOT NULL,
+    hypotheses_json TEXT NOT NULL,
+    unknowns_json TEXT NOT NULL,
+    recommendations_json TEXT NOT NULL,
+    sign_off_investigator TEXT NOT NULL,
+    cryptographic_seal TEXT NOT NULL,
+    created_at REAL NOT NULL,
+    FOREIGN KEY(case_id) REFERENCES for_cases(case_id)
+);
+CREATE INDEX IF NOT EXISTS idx_for_reports_case ON for_reports(case_id);
+
+-- Legal holds and retention extensions
+CREATE TABLE IF NOT EXISTS for_legal_holds (
+    hold_id TEXT PRIMARY KEY,
+    case_id TEXT NOT NULL,
+    hold_reason TEXT NOT NULL,
+    applied_by TEXT NOT NULL,
+    approval_token TEXT NOT NULL,
+    is_active INTEGER NOT NULL DEFAULT 1,
+    applied_at REAL NOT NULL,
+    released_at REAL,
+    released_by TEXT,
+    FOREIGN KEY(case_id) REFERENCES for_cases(case_id)
+);
+CREATE INDEX IF NOT EXISTS idx_for_holds_case ON for_legal_holds(case_id);
+"""
+
 def apply_migrations(db_path: str) -> int:
     """Applies ordered, transactional migrations to ensure schema freshness without data destruction."""
     os.makedirs(os.path.dirname(os.path.abspath(db_path)), exist_ok=True)
@@ -4645,6 +4814,17 @@ def apply_migrations(db_path: str) -> int:
             conn.commit()
             logger.info("Migration v32 applied successfully.")
             current_version = 32
+
+        if current_version < 33:
+            logger.info("Applying Migration v33 (Autonomous Digital Forensics & Evidence Preservation Tables)...")
+            cursor.executescript(MIGRATION_V33)
+            cursor.execute(
+                "INSERT INTO schema_migrations (version, applied_at, description) VALUES (?, ?, ?)",
+                (33, time.time(), "Autonomous Digital Forensics, Evidence Preservation & Incident Investigation Intelligence Engine tables")
+            )
+            conn.commit()
+            logger.info("Migration v33 applied successfully.")
+            current_version = 33
 
         return current_version
     except Exception as e:
