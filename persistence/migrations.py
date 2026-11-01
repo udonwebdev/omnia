@@ -7,7 +7,7 @@ from typing import List, Tuple
 
 logger = logging.getLogger("Omnia.Persistence.Migrations")
 
-CURRENT_SCHEMA_VERSION = 30
+CURRENT_SCHEMA_VERSION = 31
 
 MIGRATION_V1 = """
 -- Schema Version 1: Durable Task Graph & Crash Recovery Tables
@@ -3776,6 +3776,236 @@ CREATE TABLE IF NOT EXISTS qa_repair_verifications (
 );
 """
 
+
+
+MIGRATION_V31 = """
+-- Schema Version 31: Autonomous Application Security Testing, Vulnerability Intelligence & Defensive Validation Engine
+
+CREATE TABLE IF NOT EXISTS sec_assets (
+    asset_id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    asset_type TEXT NOT NULL, -- APPLICATION, SERVICE, API, REPOSITORY, CONTAINER, INFRA_CONFIG
+    owner TEXT NOT NULL,
+    environment TEXT NOT NULL DEFAULT 'STAGING', -- DEV, STAGING, PRODUCTION, LAB
+    discovery_source TEXT NOT NULL DEFAULT 'MANUAL',
+    authorization_id TEXT,
+    technology_stack_json TEXT DEFAULT '[]',
+    exposure_tier TEXT NOT NULL DEFAULT 'INTERNAL', -- INTERNAL, RESTRICTED, PUBLIC
+    criticality TEXT NOT NULL DEFAULT 'MEDIUM', -- LOW, MEDIUM, HIGH, MISSION_CRITICAL
+    security_posture_score REAL DEFAULT 100.0,
+    last_assessed_at TEXT,
+    created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS sec_authorizations (
+    authorization_id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    operator TEXT NOT NULL,
+    owner_approval_ref TEXT NOT NULL,
+    assessment_purpose TEXT NOT NULL,
+    environment_tier TEXT NOT NULL,
+    permitted_techniques_json TEXT DEFAULT '[]',
+    allow_destructive INTEGER DEFAULT 0,
+    rate_limit_rps INTEGER DEFAULT 10,
+    valid_from TEXT NOT NULL,
+    valid_until TEXT NOT NULL,
+    is_revoked INTEGER DEFAULT 0,
+    revoked_reason TEXT,
+    created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS sec_scopes (
+    scope_id TEXT PRIMARY KEY,
+    authorization_id TEXT NOT NULL,
+    asset_id TEXT NOT NULL,
+    permitted_endpoints_json TEXT DEFAULT '[]',
+    excluded_endpoints_json TEXT DEFAULT '[]',
+    permitted_components_json TEXT DEFAULT '[]',
+    excluded_components_json TEXT DEFAULT '[]',
+    created_at TEXT NOT NULL,
+    FOREIGN KEY(authorization_id) REFERENCES sec_authorizations(authorization_id) ON DELETE CASCADE,
+    FOREIGN KEY(asset_id) REFERENCES sec_assets(asset_id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS sec_assessments (
+    assessment_id TEXT PRIMARY KEY,
+    authorization_id TEXT NOT NULL,
+    asset_id TEXT NOT NULL,
+    assessment_type TEXT NOT NULL, -- STATIC_ANALYSIS, API_AUDIT, DEPENDENCY_SCA, SECRET_DETECTION, CONFIG_AUDIT, FULL_ASSESSMENT
+    status TEXT NOT NULL DEFAULT 'INITIALIZED', -- INITIALIZED, RUNNING, COMPLETED, ABORTED, FAILED
+    started_at TEXT NOT NULL,
+    completed_at TEXT,
+    findings_count INTEGER DEFAULT 0,
+    critical_findings_count INTEGER DEFAULT 0,
+    high_findings_count INTEGER DEFAULT 0,
+    raw_telemetry_json TEXT DEFAULT '{}',
+    FOREIGN KEY(authorization_id) REFERENCES sec_authorizations(authorization_id) ON DELETE CASCADE,
+    FOREIGN KEY(asset_id) REFERENCES sec_assets(asset_id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS sec_findings (
+    finding_id TEXT PRIMARY KEY,
+    assessment_id TEXT NOT NULL,
+    asset_id TEXT NOT NULL,
+    title TEXT NOT NULL,
+    category TEXT NOT NULL, -- INJECTION, AUTH_BYPASS, SECRET_LEAK, VULN_DEPENDENCY, MISCONFIG, XSS, CSRF, SSRF, CRYPTO
+    severity TEXT NOT NULL, -- LOW, MEDIUM, HIGH, CRITICAL
+    cwe_id TEXT,
+    component_ref TEXT NOT NULL,
+    location_ref TEXT,
+    evidence_redacted_json TEXT DEFAULT '{}',
+    fingerprint_sha256 TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'NEW', -- NEW, VALIDATED, FALSE_POSITIVE, MITIGATED, RESOLVED
+    created_at TEXT NOT NULL,
+    FOREIGN KEY(assessment_id) REFERENCES sec_assessments(assessment_id) ON DELETE CASCADE,
+    FOREIGN KEY(asset_id) REFERENCES sec_assets(asset_id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS sec_vulnerability_sources (
+    source_id TEXT PRIMARY KEY,
+    source_name TEXT NOT NULL, -- NVD_CVE, GITHUB_ADVISORY, CISA_KEV, OSV
+    feed_url TEXT,
+    confidence_weight REAL DEFAULT 1.0,
+    last_synced_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS sec_vulnerability_records (
+    vulnerability_id TEXT PRIMARY KEY, -- CVE-XXXX-XXXX or GHSA-XXXX
+    source_id TEXT NOT NULL,
+    title TEXT NOT NULL,
+    description TEXT,
+    severity TEXT NOT NULL,
+    cvss_score REAL,
+    cwe_id TEXT,
+    affected_package TEXT NOT NULL,
+    affected_version_ranges_json TEXT DEFAULT '[]',
+    fixed_versions_json TEXT DEFAULT '[]',
+    is_known_exploited INTEGER DEFAULT 0, -- CISA KEV
+    published_at TEXT,
+    modified_at TEXT,
+    provenance_metadata_json TEXT DEFAULT '{}',
+    FOREIGN KEY(source_id) REFERENCES sec_vulnerability_sources(source_id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS sec_validations (
+    validation_id TEXT PRIMARY KEY,
+    finding_id TEXT NOT NULL,
+    method TEXT NOT NULL, -- STATIC_CONFIRM, SAFE_DYNAMIC_PROBE, TEST_HARNESS, REPRODUCTION
+    outcome TEXT NOT NULL, -- CONFIRMED, LIKELY, UNCONFIRMED, FALSE_POSITIVE, NOT_SAFELY_TESTABLE
+    is_destructive INTEGER DEFAULT 0,
+    executed_at TEXT NOT NULL,
+    FOREIGN KEY(finding_id) REFERENCES sec_findings(finding_id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS sec_validation_evidence (
+    evidence_id TEXT PRIMARY KEY,
+    validation_id TEXT NOT NULL,
+    evidence_type TEXT NOT NULL, -- REDACTED_PAYLOAD, AST_NODE, HTTP_RESPONSE, CONFIG_SNIPPET
+    redacted_content TEXT NOT NULL,
+    checksum_sha256 TEXT NOT NULL,
+    captured_at TEXT NOT NULL,
+    FOREIGN KEY(validation_id) REFERENCES sec_validations(validation_id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS sec_attack_paths (
+    path_id TEXT PRIMARY KEY,
+    assessment_id TEXT NOT NULL,
+    entry_asset_id TEXT NOT NULL,
+    target_asset_id TEXT NOT NULL,
+    path_hops_json TEXT DEFAULT '[]', -- Ordered list of hops crossing trust boundaries
+    aggregate_risk_score REAL DEFAULT 0.0,
+    is_validated INTEGER DEFAULT 0,
+    created_at TEXT NOT NULL,
+    FOREIGN KEY(assessment_id) REFERENCES sec_assessments(assessment_id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS sec_risk_assessments (
+    risk_assessment_id TEXT PRIMARY KEY,
+    finding_id TEXT NOT NULL,
+    asset_id TEXT NOT NULL,
+    technical_severity TEXT NOT NULL,
+    exploitability_score REAL NOT NULL,
+    asset_criticality_weight REAL NOT NULL,
+    exposure_multiplier REAL NOT NULL,
+    contextual_risk_score REAL NOT NULL, -- 0.0 to 100.0
+    priority_level TEXT NOT NULL, -- P0_IMMEDIATE, P1_URGENT, P2_STANDARD, P3_LOW
+    urgency_recommendation TEXT,
+    calculated_at TEXT NOT NULL,
+    FOREIGN KEY(finding_id) REFERENCES sec_findings(finding_id) ON DELETE CASCADE,
+    FOREIGN KEY(asset_id) REFERENCES sec_assets(asset_id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS sec_remediation_plans (
+    plan_id TEXT PRIMARY KEY,
+    finding_id TEXT NOT NULL,
+    recommended_action TEXT NOT NULL, -- UPGRADE_DEPENDENCY, REVISE_AST_PATTERN, RECONFIGURE, ROTATE_SECRET
+    action_details_json TEXT DEFAULT '{}',
+    breaking_change_risk TEXT DEFAULT 'LOW',
+    estimated_complexity TEXT DEFAULT 'SIMPLE',
+    patch_diff TEXT,
+    status TEXT NOT NULL DEFAULT 'PROPOSED', -- PROPOSED, APPROVED, APPLIED, REJECTED
+    created_at TEXT NOT NULL,
+    FOREIGN KEY(finding_id) REFERENCES sec_findings(finding_id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS sec_remediation_executions (
+    execution_id TEXT PRIMARY KEY,
+    plan_id TEXT NOT NULL,
+    applied_by TEXT NOT NULL,
+    patch_commit_ref TEXT,
+    applied_at TEXT NOT NULL,
+    FOREIGN KEY(plan_id) REFERENCES sec_remediation_plans(plan_id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS sec_fix_verifications (
+    verification_id TEXT PRIMARY KEY,
+    finding_id TEXT NOT NULL,
+    plan_id TEXT NOT NULL,
+    module45_mission_id TEXT,
+    original_probe_passed INTEGER NOT NULL, -- 1 means the exploit/weakness probe now fails safely
+    regressions_found INTEGER DEFAULT 0,
+    is_fully_resolved INTEGER NOT NULL,
+    verified_at TEXT NOT NULL,
+    FOREIGN KEY(finding_id) REFERENCES sec_findings(finding_id) ON DELETE CASCADE,
+    FOREIGN KEY(plan_id) REFERENCES sec_remediation_plans(plan_id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS sec_exceptions (
+    exception_id TEXT PRIMARY KEY,
+    finding_id TEXT NOT NULL,
+    approved_by TEXT NOT NULL,
+    justification TEXT NOT NULL,
+    compensating_controls TEXT,
+    valid_until TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'ACTIVE', -- ACTIVE, EXPIRED, REVOKED
+    granted_at TEXT NOT NULL,
+    FOREIGN KEY(finding_id) REFERENCES sec_findings(finding_id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS sec_posture_snapshots (
+    snapshot_id TEXT PRIMARY KEY,
+    asset_id TEXT NOT NULL,
+    posture_score REAL NOT NULL,
+    open_findings_count INTEGER DEFAULT 0,
+    critical_count INTEGER DEFAULT 0,
+    high_count INTEGER DEFAULT 0,
+    active_exceptions_count INTEGER DEFAULT 0,
+    snapshot_at TEXT NOT NULL,
+    FOREIGN KEY(asset_id) REFERENCES sec_assets(asset_id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS sec_audit_records (
+    audit_id TEXT PRIMARY KEY,
+    authorization_id TEXT,
+    asset_id TEXT,
+    action_type TEXT NOT NULL, -- AUTH_CHECK, SCAN_START, VALIDATION_EXEC, SECRET_DETECT, FIX_APPLIED, KILL_SWITCH
+    actor TEXT NOT NULL,
+    details_json TEXT DEFAULT '{}',
+    timestamp TEXT NOT NULL
+);
+"""
+
+
 def backup_database(db_path: str, backup_dir: str = "persistence_backups") -> str:
     """Creates a timestamped snapshot of the SQLite database prior to any schema modification."""
     if not os.path.exists(db_path):
@@ -4142,6 +4372,17 @@ def apply_migrations(db_path: str) -> int:
             conn.commit()
             logger.info("Migration v30 applied successfully.")
             current_version = 30
+
+        if current_version < 31:
+            logger.info("Applying Migration v31 (Autonomous AppSec & Vulnerability Intelligence Tables)...")
+            cursor.executescript(MIGRATION_V31)
+            cursor.execute(
+                "INSERT INTO schema_migrations (version, applied_at, description) VALUES (?, ?, ?)",
+                (31, time.time(), "Autonomous Application Security Testing, Vulnerability Intelligence & Defensive Validation Engine tables")
+            )
+            conn.commit()
+            logger.info("Migration v31 applied successfully.")
+            current_version = 31
 
         return current_version
     except Exception as e:

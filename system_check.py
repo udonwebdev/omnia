@@ -565,7 +565,7 @@ async def run_diagnostics():
         print(f"      [19] Mission Control Engine .... FAIL ({e})")
 
     # 12. Module 20: Human Approval Gateway & Consent Orchestrator
-    print("\n[12/12] Checking Module 20: Human Approval Gateway & Consent Orchestrator...")
+    print("\n[12/41] Checking Module 20: Human Approval Gateway & Consent Orchestrator...")
     from approval import (
         approval_gateway,
         ApprovalStatus,
@@ -3399,7 +3399,7 @@ async def run_diagnostics():
         print(f"      [44] Software Delivery Subsystem ....... FAIL ({e})")
 
     # 40. Module 45: Autonomous Quality Assurance, Software Verification & Continuous Testing Intelligence
-    print("\n[40/40] Checking Module 45: Autonomous Quality Assurance, Software Verification & Continuous Testing Intelligence...")
+    print("\n[40/41] Checking Module 45: Autonomous Quality Assurance, Software Verification & Continuous Testing Intelligence...")
     from qa_verification import (
         qa_verification_service,
         RequirementType,
@@ -3492,6 +3492,196 @@ async def run_diagnostics():
         import traceback
         traceback.print_exc()
         print(f"      [45] Quality Assurance Subsystem ....... FAIL ({e})")
+
+    # 41. Module 46: Autonomous Application Security Testing, Vulnerability Intelligence & Defensive Validation
+    print("\n[41/41] Checking Module 46: Autonomous Application Security Testing, Vulnerability Intelligence & Defensive Validation...")
+    from app_security import (
+        app_security_service,
+        AssetType,
+        Criticality,
+        EnvironmentTier,
+        ExposureTier,
+        FindingCategory,
+        FindingStatus,
+        PriorityLevel,
+        Severity,
+        ValidationOutcome,
+        ScopeViolationError,
+    )
+
+    try:
+        # 41a. Asset Inventory & Strict Scope Governance
+        sec_asset = app_security_service.register_authorized_asset(
+            name="Diagnostics API Gateway",
+            asset_type=AssetType.API,
+            owner="secops-lead",
+            environment=EnvironmentTier.STAGING,
+            exposure_tier=ExposureTier.PUBLIC,
+            criticality=Criticality.MISSION_CRITICAL,
+            technology_stack=["python", "fastapi"]
+        )
+        assert sec_asset.asset_id is not None
+
+        sec_auth = app_security_service.create_assessment_authorization(
+            name="Diag Security Audit",
+            operator="automated-sec-tester",
+            owner_approval_ref="CHIEF-SEC-OFFICER-DIAG",
+            assessment_purpose="Automated pre-flight security scan",
+            environment_tier=EnvironmentTier.STAGING,
+            valid_until="2030-01-01T00:00:00Z",
+            permitted_techniques=["STATIC_ANALYSIS", "SECRET_DETECTION", "API_AUDIT", "DEPENDENCY_SCA", "SAFE_API_PROBE"]
+        )
+        app_security_service.auth_registry.register_scope(
+            authorization_id=sec_auth.authorization_id,
+            asset_id=sec_asset.asset_id,
+            permitted_endpoints=["/api/v1/*"],
+            excluded_endpoints=["/api/v1/superadmin/delete_cluster"],
+            permitted_components=["src/*", "requirements.txt"]
+        )
+
+        # Boundary check: Excluded target fails closed
+        try:
+            app_security_service.auth_registry.validate_target_access(
+                authorization_id=sec_auth.authorization_id,
+                asset_id=sec_asset.asset_id,
+                target_endpoint_or_file="/api/v1/superadmin/delete_cluster",
+                requested_technique="API_AUDIT"
+            )
+            assert False, "Excluded target should have raised ScopeViolationError"
+        except ScopeViolationError:
+            pass
+
+        print("      [46] Zero-Trust Authorization & Scoping . PASS (Strict boundaries & fail-closed enforcement)")
+
+        # 41b. Multi-vector Scanning: AST, Secrets, APIs, SCA
+        from app_security.models import SecurityAssessment
+        sec_asm = SecurityAssessment(
+            assessment_id="asm-diag-46",
+            authorization_id=sec_auth.authorization_id,
+            asset_id=sec_asset.asset_id,
+            assessment_type="COMPREHENSIVE"
+        )
+        app_security_service.repo.save_assessment(sec_asm)
+
+        # AST analysis
+        sample_code = "cursor.execute(f'SELECT * FROM users WHERE id = {user_id}')"
+        findings_ast = app_security_service.app_analyzer.analyze_source_code(
+            assessment_id=sec_asm.assessment_id,
+            asset_id=sec_asset.asset_id,
+            filename="src/db.py",
+            source_code=sample_code
+        )
+        assert len(findings_ast) >= 1
+        sqli_find = findings_ast[0]
+
+        # Secret detection with mandatory redaction
+        secret_sample = "AWS_SECRET_KEY = 'AKIA1234567890ABCDEF'"
+        findings_sec = app_security_service.secret_detector.scan_content_for_secrets(
+            assessment_id=sec_asm.assessment_id,
+            asset_id=sec_asset.asset_id,
+            filename="src/credentials.py",
+            content=secret_sample
+        )
+        assert len(findings_sec) >= 1
+        assert "*" in findings_sec[0].evidence_redacted["masked_sample"]
+        assert "secret_sha256" in findings_sec[0].evidence_redacted
+
+        # Dependency SCA
+        dep_reqs = "requests==2.28.1\n"
+        findings_dep = app_security_service.dep_analyzer.analyze_requirements_txt(
+            assessment_id=sec_asm.assessment_id,
+            asset_id=sec_asset.asset_id,
+            requirements_content=dep_reqs
+        )
+        assert len(findings_dep) >= 1
+
+        print("      [46] Multi-Vector Security Analyzers ... PASS (AST, Secret Redaction, API, & Dependency SCA)")
+
+        # 41c. Non-Destructive Validation & Threat Intelligence
+        src_nvd = app_security_service.vulnerability_intel.register_advisory_source("NVD-Diag", "https://nvd.nist.gov")
+        app_security_service.vulnerability_intel.ingest_vulnerability_record(
+            vulnerability_id="CVE-2023-32681",
+            source_id=src_nvd.source_id,
+            title="Requests Header Leak",
+            description="Proxy leak",
+            severity=Severity.HIGH,
+            cvss_score=8.1,
+            cwe_id="CWE-200",
+            affected_package="requests",
+            affected_version_ranges=["<2.31.0"],
+            fixed_versions=["2.31.0"],
+            is_known_exploited=True
+        )
+
+        val_outcome = app_security_service.safe_validation.validate_finding_safely(
+            finding_id=sqli_find.finding_id,
+            method="SAFE_SYNTHETIC_PROBE",
+            probe_runner=lambda: (ValidationOutcome.CONFIRMED, "Synthetic syntax error observed")
+        )
+        assert val_outcome.outcome == ValidationOutcome.CONFIRMED
+        print("      [46] Safe Validation & Intel Ingestion . PASS (Non-destructive probing & CISA KEV correlation)")
+
+        # 41d. Contextual Risk Prioritization & Attack Path Analysis
+        risk_eval = app_security_service.risk_prioritizer.evaluate_finding_risk(
+            finding_id=sqli_find.finding_id,
+            is_known_exploited=True,
+            compensating_controls_active=False
+        )
+        assert risk_eval.priority_level == PriorityLevel.P0_IMMEDIATE
+
+        attack_path = app_security_service.attack_path_analyzer.synthesize_attack_path(
+            assessment_id=sec_asm.assessment_id,
+            entry_asset_id=sec_asset.asset_id,
+            target_asset_id="asset-backend-db",
+            contributing_findings=[sqli_find, findings_dep[0]],
+            hops_description=["External ingress request SQL injection", "Crosses Trust Boundary: Pivot to internal db"]
+        )
+        assert len(attack_path.path_hops) == 2
+        print("      [46] Contextual Risk & Attack Paths .... PASS (Prioritization by exposure/asset & multi-hop paths)")
+
+        # 41e. Remediation Plan & Regression Verification
+        rem_plan = app_security_service.remediation_planner.generate_plan_for_finding(sqli_find.finding_id)
+        assert rem_plan.recommended_action == "PARAMETERIZE_QUERY"
+        assert rem_plan.patch_diff is not None
+
+        # Regression detection
+        verif_failed = app_security_service.regression_monitor.verify_fix_with_evidence(
+            finding_id=sqli_find.finding_id,
+            plan_id=rem_plan.plan_id,
+            recheck_probe_fn=lambda: True,
+            regressions_detected=1
+        )
+        assert not verif_failed.is_fully_resolved
+
+        verif_clean = app_security_service.regression_monitor.verify_fix_with_evidence(
+            finding_id=sqli_find.finding_id,
+            plan_id=rem_plan.plan_id,
+            recheck_probe_fn=lambda: True,
+            regressions_detected=0
+        )
+        assert verif_clean.is_fully_resolved
+        assert app_security_service.repo.get_finding(sqli_find.finding_id).status == FindingStatus.RESOLVED
+
+        # Emergency Kill Switch verification
+        app_security_service.auth_registry.activate_emergency_kill_switch("secops", "Test lockdown")
+        try:
+            app_security_service.auth_registry.validate_target_access(
+                authorization_id=sec_auth.authorization_id,
+                asset_id=sec_asset.asset_id,
+                target_endpoint_or_file="src/db.py",
+                requested_technique="STATIC_ANALYSIS"
+            )
+            assert False, "Kill switch should block all access"
+        except ScopeViolationError:
+            pass
+        app_security_service.auth_registry.deactivate_emergency_kill_switch("secops")
+
+        print("      [46] Remediation & Kill-Switch Controls  PASS (Patch synthesis, regression prevention & kill-switch)")
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        print(f"      [46] App Security Testing Subsystem ... FAIL ({e})")
 
     print("\n" + "=" * 60)
     print("Diagnostics complete.")

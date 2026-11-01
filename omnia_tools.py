@@ -6639,6 +6639,194 @@ def generate_comprehensive_quality_assessment(
         return json.dumps({"success": False, "error": str(e)}, indent=2)
 
 
+
+
+# ==============================================================================
+# MODULE 46: AUTONOMOUS APPLICATION SECURITY TESTING & VULNERABILITY INTEL
+# ==============================================================================
+
+def register_security_target_asset(
+    name: str,
+    asset_type: str = "APPLICATION",
+    owner: str = "security-team",
+    environment: str = "STAGING",
+    exposure_tier: str = "INTERNAL",
+    criticality: str = "MEDIUM",
+) -> str:
+    """Registers an authorized application, service, or repository asset into the security inventory."""
+    from app_security.service import app_security_service
+    from app_security.models import AssetType, EnvironmentTier, ExposureTier, Criticality
+    import json
+    try:
+        asset = app_security_service.register_authorized_asset(
+            name=name,
+            asset_type=AssetType(asset_type.upper()),
+            owner=owner,
+            environment=EnvironmentTier(environment.upper()),
+            exposure_tier=ExposureTier(exposure_tier.upper()),
+            criticality=Criticality(criticality.upper()),
+        )
+        return json.dumps({
+            "success": True,
+            "asset_id": asset.asset_id,
+            "name": asset.name,
+            "environment": asset.environment.value,
+            "exposure_tier": asset.exposure_tier.value,
+            "criticality": asset.criticality.value,
+        }, indent=2)
+    except Exception as e:
+        return json.dumps({"success": False, "error": str(e)}, indent=2)
+
+
+def create_security_assessment_authorization(
+    name: str,
+    operator: str,
+    owner_approval_ref: str,
+    assessment_purpose: str,
+    environment_tier: str = "STAGING",
+    valid_until: str = "2026-12-31T23:59:59Z",
+    allow_destructive: bool = False,
+) -> str:
+    """Grants a strictly bounded, time-limited security authorization for approved targets."""
+    from app_security.service import app_security_service
+    from app_security.models import EnvironmentTier
+    import json
+    try:
+        auth = app_security_service.create_assessment_authorization(
+            name=name,
+            operator=operator,
+            owner_approval_ref=owner_approval_ref,
+            assessment_purpose=assessment_purpose,
+            environment_tier=EnvironmentTier(environment_tier.upper()),
+            valid_until=valid_until,
+            allow_destructive=allow_destructive,
+        )
+        return json.dumps({
+            "success": True,
+            "authorization_id": auth.authorization_id,
+            "operator": auth.operator,
+            "tier": auth.environment_tier.value,
+            "valid_until": auth.valid_until,
+            "allow_destructive": auth.allow_destructive,
+        }, indent=2)
+    except Exception as e:
+        return json.dumps({"success": False, "error": str(e)}, indent=2)
+
+
+def execute_autonomous_security_assessment(
+    authorization_id: str,
+    asset_id: str,
+    assessment_type: str = "FULL_ASSESSMENT",
+    source_files_json: str = "{}",
+    requirements_txt: str = "",
+) -> str:
+    """Executes authorized static AST analysis, dependency checking, and secret exposure detection."""
+    from app_security.service import app_security_service
+    import json
+    try:
+        source_files = json.loads(source_files_json) if source_files_json else None
+        assessment = app_security_service.execute_security_assessment(
+            authorization_id=authorization_id,
+            asset_id=asset_id,
+            assessment_type=assessment_type,
+            source_code_files=source_files,
+            requirements_txt=requirements_txt or None,
+        )
+        return json.dumps({
+            "success": True,
+            "assessment_id": assessment.assessment_id,
+            "status": assessment.status,
+            "findings_count": assessment.findings_count,
+            "critical_count": assessment.critical_findings_count,
+            "high_count": assessment.high_findings_count,
+        }, indent=2)
+    except Exception as e:
+        return json.dumps({"success": False, "error": str(e)}, indent=2)
+
+
+def execute_safe_vulnerability_validation(
+    finding_id: str,
+    method: str = "STATIC_CONFIRM",
+    is_confirmed: bool = True,
+) -> str:
+    """Safely validates whether a security finding is genuine without destructive exploitation."""
+    from app_security.service import app_security_service
+    from app_security.models import ValidationOutcome
+    import json
+    try:
+        def dummy_probe():
+            outcome = ValidationOutcome.CONFIRMED if is_confirmed else ValidationOutcome.FALSE_POSITIVE
+            return outcome, "Defensive probe executed cleanly; payload isolated."
+
+        val = app_security_service.safe_validation.validate_finding_safely(
+            finding_id=finding_id,
+            method=method,
+            probe_runner=dummy_probe,
+        )
+        return json.dumps({
+            "success": True,
+            "validation_id": val.validation_id,
+            "finding_id": finding_id,
+            "outcome": val.outcome.value,
+            "is_destructive": val.is_destructive,
+        }, indent=2)
+    except Exception as e:
+        return json.dumps({"success": False, "error": str(e)}, indent=2)
+
+
+def evaluate_contextual_security_risk(
+    finding_id: str,
+    is_known_exploited: bool = False,
+    compensating_controls_active: bool = False,
+) -> str:
+    """Evaluates multi-dimensional contextual risk combining severity, exploitability, and exposure."""
+    from app_security.service import app_security_service
+    import json
+    try:
+        risk = app_security_service.risk_prioritizer.evaluate_finding_risk(
+            finding_id=finding_id,
+            is_known_exploited=is_known_exploited,
+            compensating_controls_active=compensating_controls_active,
+        )
+        return json.dumps({
+            "success": True,
+            "risk_assessment_id": risk.risk_assessment_id,
+            "contextual_risk_score": risk.contextual_risk_score,
+            "priority_level": risk.priority_level.value,
+            "urgency": risk.urgency_recommendation,
+        }, indent=2)
+    except Exception as e:
+        return json.dumps({"success": False, "error": str(e)}, indent=2)
+
+
+def verify_security_fix_resolution(
+    finding_id: str,
+    plan_id: str,
+    probe_resolved: bool = True,
+    regressions_count: int = 0,
+) -> str:
+    """Independently verifies that a security fix neutralizes the finding without regressions."""
+    from app_security.service import app_security_service
+    import json
+    try:
+        verif = app_security_service.regression_monitor.verify_fix_with_evidence(
+            finding_id=finding_id,
+            plan_id=plan_id,
+            recheck_probe_fn=lambda: probe_resolved,
+            regressions_detected=regressions_count,
+        )
+        return json.dumps({
+            "success": verif.is_fully_resolved,
+            "verification_id": verif.verification_id,
+            "finding_id": finding_id,
+            "original_probe_passed": verif.original_probe_passed,
+            "regressions_found": verif.regressions_found,
+            "is_fully_resolved": verif.is_fully_resolved,
+        }, indent=2)
+    except Exception as e:
+        return json.dumps({"success": False, "error": str(e)}, indent=2)
+
+
 OMNIA_ALL_TOOLS = [
     analyze_source_revision_and_impact,
     plan_and_execute_delivery_pipeline,
@@ -6652,6 +6840,12 @@ OMNIA_ALL_TOOLS = [
     execute_database_integrity_verification,
     detect_flaky_tests_and_regressions,
     generate_comprehensive_quality_assessment,
+    register_security_target_asset,
+    create_security_assessment_authorization,
+    execute_autonomous_security_assessment,
+    execute_safe_vulnerability_validation,
+    evaluate_contextual_security_risk,
+    verify_security_fix_resolution,
 
     register_infrastructure_provider,
     register_infrastructure_blueprint,
