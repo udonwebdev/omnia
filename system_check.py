@@ -3398,6 +3398,101 @@ async def run_diagnostics():
         traceback.print_exc()
         print(f"      [44] Software Delivery Subsystem ....... FAIL ({e})")
 
+    # 40. Module 45: Autonomous Quality Assurance, Software Verification & Continuous Testing Intelligence
+    print("\n[40/40] Checking Module 45: Autonomous Quality Assurance, Software Verification & Continuous Testing Intelligence...")
+    from qa_verification import (
+        qa_verification_service,
+        RequirementType,
+        TestCategory,
+        DefectSeverity,
+        DefectCategory,
+        QualityTier,
+        FlakyClassification,
+    )
+
+    try:
+        # 40a. Project Registration & Requirement Parsing
+        q_proj = qa_verification_service.register_project(
+            name="Omnia Production System Verification",
+            repository_ref="repo/production"
+        )
+        q_req, q_criteria = qa_verification_service.requirement_analyzer.import_requirement(
+            project_id=q_proj.project_id,
+            title="Secure Vault Encryption",
+            description="All vault secrets must be encrypted using AES-256-GCM and remain highly secure and fast.",
+            requirement_type=RequirementType.SECURITY
+        )
+        assert q_req.is_ambiguous is True  # catches 'fast'
+        assert len(q_criteria) >= 1
+        print("      [45] Requirement Analysis & Parsing .... PASS (Ambiguity detection & measurable criteria derived)")
+
+        # 40b. Strategy & Test Generation
+        strat_dict = qa_verification_service.generate_strategy_and_tests(
+            project_id=q_proj.project_id,
+            risk_profile="HIGH_SECURITY"
+        )
+        assert strat_dict["strategy"].allocated_budget_seconds == 1200.0
+        assert len(strat_dict["test_cases"]) >= 1
+        print("      [45] Strategy & Test Case Synthesis .... PASS (Risk-weighted test budgets & multi-category generation)")
+
+        # 40c. Contract & Integrity Verification
+        c_res = qa_verification_service.verify_api_endpoint(
+            endpoint_url="/api/v1/vault/status",
+            expected_schema={"required": ["status", "active"]},
+            actual_response={"status": "HEALTHY", "active": True},
+            expected_status=200,
+            actual_status=200,
+            project_id=q_proj.project_id,
+            test_case_id=strat_dict["test_cases"][0].test_case_id
+        )
+        assert c_res.passed is True
+        print("      [45] API Contract & Schema Verification . PASS (Declarative response validation & violation isolation)")
+
+        # 40d. Defect Lifecycle, Flaky Detection & Quality Gate
+        q_def = qa_verification_service.defect_intelligence.record_defect(
+            project_id=q_proj.project_id,
+            execution_id="exec-diag-m45",
+            title="Transient memory leak in decrypt loop",
+            category=DefectCategory.SECURITY_VULNERABILITY,
+            severity=DefectSeverity.CRITICAL,
+            reproduction_steps=["Run 1000 decrypt loops"]
+        )
+        gate_blocked = qa_verification_service.execute_quality_gate_assessment(
+            project_id=q_proj.project_id,
+            mission_id="gate-diag-check"
+        )
+        assert gate_blocked.tier == QualityTier.UNACCEPTABLE
+
+        # Verify Repair
+        repair_v = qa_verification_service.repair_verifier.verify_defect_repair(
+            defect_id=q_def.defect_id,
+            patch_summary="Fix buffer free in AES decrypt",
+            failing_test_recheck_passed=True,
+            regression_test_results={"tc-v1": True, "tc-v2": True}
+        )
+        assert repair_v.retest_passed is True and repair_v.regressions_found == 0
+
+        # Stable Flaky Assessment
+        flaky_rec = qa_verification_service.flaky_detector.evaluate_test_stability(
+            test_case_id=strat_dict["test_cases"][0].test_case_id,
+            execution_results=[True, True, True, True]
+        )
+        assert flaky_rec.classification == FlakyClassification.STABLE_PASSING
+
+        # Final Quality Gate Assessment
+        final_gate = qa_verification_service.execute_quality_gate_assessment(
+            project_id=q_proj.project_id,
+            mission_id="gate-diag-final"
+        )
+        assert final_gate.tier == QualityTier.PRODUCTION_READY
+        assert final_gate.unresolved_defects_count == 0
+        print("      [45] Defect Repair & Multi-Dim Quality .. PASS (Evidence-backed repair verification & gate enforcement)")
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        print(f"      [45] Quality Assurance Subsystem ....... FAIL ({e})")
+
     print("\n" + "=" * 60)
     print("Diagnostics complete.")
     print("=" * 60)

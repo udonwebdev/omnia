@@ -7,7 +7,7 @@ from typing import List, Tuple
 
 logger = logging.getLogger("Omnia.Persistence.Migrations")
 
-CURRENT_SCHEMA_VERSION = 29
+CURRENT_SCHEMA_VERSION = 30
 
 MIGRATION_V1 = """
 -- Schema Version 1: Durable Task Graph & Crash Recovery Tables
@@ -3567,6 +3567,215 @@ CREATE TABLE IF NOT EXISTS delivery_deployment_handoffs (
 );
 """
 
+MIGRATION_V30 = """
+-- Schema Version 30: Autonomous Quality Assurance, Software Verification & Continuous Testing Intelligence
+
+CREATE TABLE IF NOT EXISTS qa_projects (
+    project_id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    repository_ref TEXT NOT NULL,
+    framework TEXT DEFAULT 'python-unittest',
+    is_active INTEGER DEFAULT 1,
+    metadata_json TEXT DEFAULT '{}',
+    registered_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS qa_requirements (
+    requirement_id TEXT PRIMARY KEY,
+    project_id TEXT NOT NULL,
+    title TEXT NOT NULL,
+    description TEXT NOT NULL,
+    requirement_type TEXT NOT NULL,
+    source_reference TEXT DEFAULT '',
+    is_ambiguous INTEGER DEFAULT 0,
+    ambiguity_notes TEXT,
+    created_at TEXT NOT NULL,
+    FOREIGN KEY(project_id) REFERENCES qa_projects(project_id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS qa_acceptance_criteria (
+    criterion_id TEXT PRIMARY KEY,
+    requirement_id TEXT NOT NULL,
+    expected_behavior TEXT NOT NULL,
+    preconditions_json TEXT DEFAULT '[]',
+    inputs_json TEXT DEFAULT '{}',
+    expected_outputs_json TEXT DEFAULT '{}',
+    failure_conditions_json TEXT DEFAULT '[]',
+    priority INTEGER DEFAULT 1,
+    confidence REAL DEFAULT 1.0,
+    FOREIGN KEY(requirement_id) REFERENCES qa_requirements(requirement_id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS qa_test_strategies (
+    strategy_id TEXT PRIMARY KEY,
+    project_id TEXT NOT NULL,
+    name TEXT NOT NULL,
+    target_categories_json TEXT DEFAULT '[]',
+    risk_weighting_json TEXT DEFAULT '{}',
+    allocated_budget_seconds REAL DEFAULT 600.0,
+    created_at TEXT NOT NULL,
+    FOREIGN KEY(project_id) REFERENCES qa_projects(project_id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS qa_test_cases (
+    test_case_id TEXT PRIMARY KEY,
+    criterion_id TEXT NOT NULL,
+    name TEXT NOT NULL,
+    category TEXT NOT NULL,
+    objective TEXT NOT NULL,
+    inputs_json TEXT DEFAULT '{}',
+    assertions_json TEXT DEFAULT '[]',
+    is_edge_case INTEGER DEFAULT 0,
+    created_at TEXT NOT NULL,
+    FOREIGN KEY(criterion_id) REFERENCES qa_acceptance_criteria(criterion_id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS qa_missions (
+    mission_id TEXT PRIMARY KEY,
+    project_id TEXT NOT NULL,
+    strategy_id TEXT NOT NULL,
+    status TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    completed_at TEXT,
+    FOREIGN KEY(project_id) REFERENCES qa_projects(project_id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS qa_executions (
+    execution_id TEXT PRIMARY KEY,
+    mission_id TEXT NOT NULL,
+    test_case_id TEXT NOT NULL,
+    status TEXT NOT NULL,
+    duration_seconds REAL DEFAULT 0.0,
+    stdout TEXT DEFAULT '',
+    stderr TEXT DEFAULT '',
+    executed_at TEXT NOT NULL,
+    FOREIGN KEY(mission_id) REFERENCES qa_missions(mission_id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS qa_results (
+    result_id TEXT PRIMARY KEY,
+    execution_id TEXT NOT NULL,
+    passed INTEGER NOT NULL,
+    observed_output_json TEXT DEFAULT '{}',
+    discrepancies_json TEXT DEFAULT '[]',
+    evidence_ids_json TEXT DEFAULT '[]',
+    evaluated_at TEXT NOT NULL,
+    FOREIGN KEY(execution_id) REFERENCES qa_executions(execution_id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS qa_evidence (
+    evidence_id TEXT PRIMARY KEY,
+    execution_id TEXT NOT NULL,
+    evidence_type TEXT NOT NULL,
+    payload TEXT NOT NULL,
+    checksum_sha256 TEXT NOT NULL,
+    captured_at TEXT NOT NULL,
+    FOREIGN KEY(execution_id) REFERENCES qa_executions(execution_id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS qa_coverage_records (
+    coverage_id TEXT PRIMARY KEY,
+    mission_id TEXT NOT NULL,
+    requirements_total INTEGER DEFAULT 0,
+    requirements_covered INTEGER DEFAULT 0,
+    coverage_pct REAL DEFAULT 0.0,
+    gap_details_json TEXT DEFAULT '[]',
+    calculated_at TEXT NOT NULL,
+    FOREIGN KEY(mission_id) REFERENCES qa_missions(mission_id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS qa_defects (
+    defect_id TEXT PRIMARY KEY,
+    project_id TEXT NOT NULL,
+    execution_id TEXT NOT NULL,
+    title TEXT NOT NULL,
+    category TEXT NOT NULL,
+    severity TEXT NOT NULL,
+    reproduction_steps_json TEXT DEFAULT '[]',
+    stack_trace TEXT,
+    is_reproduced INTEGER DEFAULT 1,
+    is_resolved INTEGER DEFAULT 0,
+    detected_at TEXT NOT NULL,
+    FOREIGN KEY(project_id) REFERENCES qa_projects(project_id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS qa_regressions (
+    regression_id TEXT PRIMARY KEY,
+    project_id TEXT NOT NULL,
+    defect_id TEXT NOT NULL,
+    component_name TEXT NOT NULL,
+    baseline_revision TEXT NOT NULL,
+    current_revision TEXT NOT NULL,
+    description TEXT NOT NULL,
+    detected_at TEXT NOT NULL,
+    FOREIGN KEY(project_id) REFERENCES qa_projects(project_id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS qa_flaky_tests (
+    flaky_id TEXT PRIMARY KEY,
+    test_case_id TEXT NOT NULL,
+    runs_evaluated INTEGER DEFAULT 0,
+    passes INTEGER DEFAULT 0,
+    failures INTEGER DEFAULT 0,
+    variance_score REAL DEFAULT 0.0,
+    classification TEXT NOT NULL,
+    assessed_at TEXT NOT NULL,
+    FOREIGN KEY(test_case_id) REFERENCES qa_test_cases(test_case_id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS qa_mutations (
+    mutation_id TEXT PRIMARY KEY,
+    mission_id TEXT NOT NULL,
+    mutant_type TEXT NOT NULL,
+    killed INTEGER NOT NULL,
+    surviving_details TEXT,
+    executed_at TEXT NOT NULL,
+    FOREIGN KEY(mission_id) REFERENCES qa_missions(mission_id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS qa_performance_assessments (
+    assessment_id TEXT PRIMARY KEY,
+    mission_id TEXT NOT NULL,
+    latency_p50_ms REAL DEFAULT 0.0,
+    latency_p95_ms REAL DEFAULT 0.0,
+    latency_p99_ms REAL DEFAULT 0.0,
+    throughput_rps REAL DEFAULT 0.0,
+    error_rate_pct REAL DEFAULT 0.0,
+    cpu_utilization_pct REAL DEFAULT 0.0,
+    memory_mb REAL DEFAULT 0.0,
+    evaluated_at TEXT NOT NULL,
+    FOREIGN KEY(mission_id) REFERENCES qa_missions(mission_id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS qa_quality_assessments (
+    assessment_id TEXT PRIMARY KEY,
+    project_id TEXT NOT NULL,
+    mission_id TEXT NOT NULL,
+    tier TEXT NOT NULL,
+    overall_score REAL DEFAULT 1.0,
+    functional_pass_rate REAL DEFAULT 1.0,
+    coverage_score REAL DEFAULT 1.0,
+    unresolved_defects_count INTEGER DEFAULT 0,
+    regressions_count INTEGER DEFAULT 0,
+    flaky_tests_count INTEGER DEFAULT 0,
+    dimension_scores_json TEXT DEFAULT '{}',
+    summary_notes TEXT DEFAULT '',
+    evaluated_at TEXT NOT NULL,
+    FOREIGN KEY(project_id) REFERENCES qa_projects(project_id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS qa_repair_verifications (
+    repair_verification_id TEXT PRIMARY KEY,
+    defect_id TEXT NOT NULL,
+    patch_ref TEXT NOT NULL,
+    retest_passed INTEGER NOT NULL,
+    regressions_found INTEGER DEFAULT 0,
+    verification_evidence_json TEXT DEFAULT '{}',
+    verified_at TEXT NOT NULL,
+    FOREIGN KEY(defect_id) REFERENCES qa_defects(defect_id) ON DELETE CASCADE
+);
+"""
+
 def backup_database(db_path: str, backup_dir: str = "persistence_backups") -> str:
     """Creates a timestamped snapshot of the SQLite database prior to any schema modification."""
     if not os.path.exists(db_path):
@@ -3922,6 +4131,17 @@ def apply_migrations(db_path: str) -> int:
             conn.commit()
             logger.info("Migration v29 applied successfully.")
             current_version = 29
+
+        if current_version < 30:
+            logger.info("Applying Migration v30 (Autonomous QA & Software Verification Engine Tables)...")
+            cursor.executescript(MIGRATION_V30)
+            cursor.execute(
+                "INSERT INTO schema_migrations (version, applied_at, description) VALUES (?, ?, ?)",
+                (30, time.time(), "Autonomous Quality Assurance, Software Verification and Continuous Testing Intelligence tables")
+            )
+            conn.commit()
+            logger.info("Migration v30 applied successfully.")
+            current_version = 30
 
         return current_version
     except Exception as e:

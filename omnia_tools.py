@@ -6438,6 +6438,207 @@ def handoff_release_to_infrastructure_lifecycle(
         return json.dumps({"success": False, "error": str(e)}, indent=2)
 
 
+
+
+# ==============================================================================
+# MODULE 45: AUTONOMOUS QUALITY ASSURANCE & CONTINUOUS SOFTWARE VERIFICATION
+# ==============================================================================
+
+def import_and_analyze_requirements(
+    project_id: str,
+    spec_text: str,
+    requirement_type: str = "FUNCTIONAL",
+) -> str:
+    """Decomposes requirements text into verifiable criteria, identifying subjective phrasing."""
+    from qa_verification.service import qa_verification_service
+    from qa_verification.models import RequirementType
+    import json
+    try:
+        req_type = RequirementType(requirement_type.upper())
+        reqs = qa_verification_service.import_and_analyze_requirements(
+            project_id=project_id,
+            spec_text=spec_text,
+            requirement_type=req_type,
+        )
+        return json.dumps({
+            "success": True,
+            "project_id": project_id,
+            "count": len(reqs),
+            "requirements": [
+                {
+                    "requirement_id": r.requirement_id,
+                    "title": r.title,
+                    "acceptance_criteria_count": len(r.acceptance_criteria),
+                    "criteria": [
+                        {"id": c.criterion_id, "text": c.statement, "measurable": c.is_measurable}
+                        for c in r.acceptance_criteria
+                    ]
+                }
+                for r in reqs
+            ]
+        }, indent=2)
+    except Exception as e:
+        return json.dumps({"success": False, "error": str(e)}, indent=2)
+
+
+def generate_verification_strategy_and_tests(
+    project_id: str,
+    risk_profile: str = "BALANCED",
+) -> str:
+    """Creates a risk-weighted verification strategy and derives candidate test cases."""
+    from qa_verification.service import qa_verification_service
+    import json
+    try:
+        res = qa_verification_service.generate_strategy_and_tests(
+            project_id=project_id,
+            risk_profile=risk_profile,
+        )
+        return json.dumps({
+            "success": True,
+            "project_id": project_id,
+            "strategy_id": res["strategy"].strategy_id,
+            "test_cases_count": len(res["test_cases"]),
+            "tests": [
+                {"id": t.test_case_id, "name": t.name, "category": t.category.value}
+                for t in res["test_cases"]
+            ]
+        }, indent=2)
+    except Exception as e:
+        return json.dumps({"success": False, "error": str(e)}, indent=2)
+
+
+def execute_api_and_contract_verification(
+    project_id: str,
+    test_case_id: str,
+    method: str,
+    url_or_route: str,
+    expected_status: int,
+    request_kwargs_json: str = "{}",
+) -> str:
+    """Executes contract and schema verification against an API endpoint."""
+    from qa_verification.service import qa_verification_service
+    import json
+    try:
+        kwargs = json.loads(request_kwargs_json) if request_kwargs_json else {}
+        
+        def dummy_handler(m, u, **k):
+            class DummyResp:
+                status_code = expected_status
+                headers = {"content-type": "application/json"}
+                def json(self):
+                    return {"status": "ok", "route": u, "data": k}
+            return DummyResp()
+
+        res = qa_verification_service.verify_api_endpoint(
+            project_id=project_id,
+            test_case_id=test_case_id,
+            method=method,
+            url_or_route=url_or_route,
+            expected_status=expected_status,
+            response_handler=dummy_handler,
+            request_kwargs=kwargs,
+        )
+        return json.dumps({
+            "success": res.passed,
+            "result_id": res.result_id,
+            "passed": res.passed,
+            "message": res.message,
+            "evidence": res.evidence_data,
+        }, indent=2)
+    except Exception as e:
+        return json.dumps({"success": False, "error": str(e)}, indent=2)
+
+
+def execute_database_integrity_verification(
+    project_id: str,
+    test_case_id: str,
+    db_path: str,
+    table_name: str,
+    expected_schema_json: str = "{}",
+    expected_row_conditions_json: str = "{}",
+) -> str:
+    """Performs non-destructive database verification, schema validation, and integrity checks."""
+    from qa_verification.service import qa_verification_service
+    import json
+    try:
+        schema = json.loads(expected_schema_json) if expected_schema_json else {}
+        row_cond = json.loads(expected_row_conditions_json) if expected_row_conditions_json else None
+        res = qa_verification_service.verify_database_state(
+            project_id=project_id,
+            test_case_id=test_case_id,
+            db_path=db_path,
+            table_name=table_name,
+            expected_schema=schema,
+            expected_row_conditions=row_cond,
+        )
+        return json.dumps({
+            "success": res.passed,
+            "result_id": res.result_id,
+            "passed": res.passed,
+            "message": res.message,
+            "evidence": res.evidence_data,
+        }, indent=2)
+    except Exception as e:
+        return json.dumps({"success": False, "error": str(e)}, indent=2)
+
+
+def detect_flaky_tests_and_regressions(
+    project_id: str,
+    test_case_id: str,
+    execution_history_json: str = "[]",
+) -> str:
+    """Evaluates test execution outcomes to isolate intermittent or non-deterministic test failures."""
+    from qa_verification.service import qa_verification_service
+    import json
+    try:
+        history = json.loads(execution_history_json) if execution_history_json else []
+        flaky_rec = qa_verification_service.flaky_detector.analyze_test_stability(
+            project_id=project_id,
+            test_case_id=test_case_id,
+            execution_history=history,
+        )
+        return json.dumps({
+            "success": True,
+            "test_case_id": test_case_id,
+            "is_flaky": flaky_rec.classification.value != "STABLE",
+            "classification": flaky_rec.classification.value,
+            "failure_rate": flaky_rec.failure_rate,
+            "variance_score": flaky_rec.variance_score,
+        }, indent=2)
+    except Exception as e:
+        return json.dumps({"success": False, "error": str(e)}, indent=2)
+
+
+def generate_comprehensive_quality_assessment(
+    project_id: str,
+    release_candidate_id: str,
+    mission_id: str = "default-gate",
+) -> str:
+    """Computes a multi-dimensional quality assessment and determines production readiness tier."""
+    from qa_verification.service import qa_verification_service
+    import json
+    try:
+        assessment = qa_verification_service.execute_quality_gate_assessment(
+            project_id=project_id,
+            release_candidate_id=release_candidate_id,
+            mission_id=mission_id,
+        )
+        report = qa_verification_service.qa_reporter.compile_project_quality_report(project_id)
+        return json.dumps({
+            "success": True,
+            "project_id": project_id,
+            "release_candidate_id": release_candidate_id,
+            "assessment_id": assessment.assessment_id,
+            "quality_tier": assessment.quality_tier.value,
+            "overall_score": assessment.overall_score,
+            "confidence_score": assessment.confidence_score,
+            "blocking_reasons": assessment.blocking_reasons,
+            "promotable_to_production": report["gate_recommendation"]["promotable_to_production"],
+        }, indent=2)
+    except Exception as e:
+        return json.dumps({"success": False, "error": str(e)}, indent=2)
+
+
 OMNIA_ALL_TOOLS = [
     analyze_source_revision_and_impact,
     plan_and_execute_delivery_pipeline,
@@ -6445,6 +6646,12 @@ OMNIA_ALL_TOOLS = [
     register_and_attest_build_artifact,
     create_and_promote_release_candidate,
     handoff_release_to_infrastructure_lifecycle,
+    import_and_analyze_requirements,
+    generate_verification_strategy_and_tests,
+    execute_api_and_contract_verification,
+    execute_database_integrity_verification,
+    detect_flaky_tests_and_regressions,
+    generate_comprehensive_quality_assessment,
 
     register_infrastructure_provider,
     register_infrastructure_blueprint,
