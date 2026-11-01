@@ -3103,6 +3103,136 @@ async def run_diagnostics():
         traceback.print_exc()
         print(f"      [41] Reliability Engineering Subsystem . FAIL ({e})")
 
+    # 37. Module 42: Autonomous Capacity Planning, Infrastructure Forecasting & Elastic Resource Intelligence
+    print("\n[37/37] Checking Module 42: Autonomous Capacity Planning & Elastic Resource Intelligence...")
+    try:
+        from capacity_planning.service import capacity_planning_service
+        from capacity_planning.models import (
+            ResourceDimension,
+            MetricUnit,
+            WorkloadCategory,
+            ForecastHorizon,
+            SaturationRiskSeverity,
+            ScalingStrategyType,
+            ScalingGovernanceMode,
+        )
+
+        test_suffix = uuid.uuid4().hex[:6]
+        r_cpu = f"diag-cap-cpu-{test_suffix}"
+        r_db = f"diag-cap-db-{test_suffix}"
+
+        # 37a. Multi-Dimensional Inventory Registration
+        res1 = capacity_planning_service.register_resource(
+            resource_id=r_cpu,
+            resource_name="Diagnostics CPU Cores",
+            dimension=ResourceDimension.COMPUTE,
+            resource_type="CPU_CORES",
+            source="HOST_CONTAINER",
+            total_capacity=32.0,
+            unit=MetricUnit.CORES,
+        )
+        assert res1.total_capacity == 32.0
+
+        res2 = capacity_planning_service.register_resource(
+            resource_id=r_db,
+            resource_name="Diagnostics DB Pool",
+            dimension=ResourceDimension.APPLICATION,
+            resource_type="DATABASE_CONNECTION",
+            source="SQL_STORE",
+            total_capacity=40.0,
+            unit=MetricUnit.CONNECTIONS,
+        )
+        assert res2.total_capacity == 40.0
+        print("      [42] Multi-Dimensional Resource Inventory PASS (Registered Compute & Application dimensions)")
+
+        # 37b. Telemetry Ingestion & Headroom
+        m = capacity_planning_service.record_measurement(r_cpu, current_value=24.0)
+        assert m.utilization_pct == 75.0
+        assert m.available_headroom == 8.0
+
+        # Feed rising trend for DB
+        for val in [20.0, 26.0, 32.0, 38.0]:
+            capacity_planning_service.record_measurement(r_db, current_value=val)
+        print("      [42] Telemetry Normalization & Headroom .. PASS (Validated exact 75.0% utilization & 8.0 headroom)")
+
+        # 37c. Workload Demand & Forecasting
+        p = capacity_planning_service.record_demand(
+            category=WorkloadCategory.SCHEDULED,
+            workload_name=f"diag_workload_{test_suffix}",
+            cpu_consumption=4.0,
+            memory_mb=4096.0,
+            duration_sec=60.0,
+            peak_cpu_consumption=12.0,
+        )
+        assert p.burstiness_index == 3.0
+
+        fc = capacity_planning_service.forecast_capacity(r_db, horizon=ForecastHorizon.TWENTY_FOUR_HOURS)
+        assert fc.projected_utilization_pct > 90.0
+        assert fc.estimated_saturation_hours is not None
+        print("      [42] Demand Profiling & Trend Forecast .. PASS (Computed 3.0x burstiness & saturation horizon)")
+
+        # 37d. Saturation Risks & Counterfactual What-If Simulation
+        risks = capacity_planning_service.detect_saturation_risks()
+        assert len(risks) >= 1
+        db_risk = next(r for r in risks if r.resource_id == r_db)
+        assert db_risk.severity == SaturationRiskSeverity.CRITICAL
+
+        sim = capacity_planning_service.simulate_capacity_scenario(
+            scenario_name=f"Surge Test {test_suffix}",
+            workload_multiplier=5.0,
+        )
+        assert sim.is_resilient is False
+        assert r_db in sim.bottleneck_resources
+        print("      [42] Saturation Detection & 5x Simulation  PASS (Flagged CRITICAL saturation & bottleneck impact)")
+
+        # 37e. Governed Scaling Execution (Module 20 Gated)
+        plan = capacity_planning_service.create_capacity_plan(
+            title=f"Plan {test_suffix}",
+            horizon=ForecastHorizon.TWENTY_FOUR_HOURS,
+            governance_mode=ScalingGovernanceMode.APPROVAL_REQUIRED,
+        )
+        proposal = capacity_planning_service.submit_scaling_proposal(
+            plan_id=plan.plan_id,
+            resource_id=r_db,
+            strategy_type=ScalingStrategyType.HORIZONTAL_SCALE_OUT,
+            to_capacity=80.0,
+        )
+
+        # Enforce gate: must reject empty token
+        blocked = False
+        try:
+            capacity_planning_service.execute_scaling_proposal(proposal.proposal_id, approval_token="")
+        except PermissionError:
+            blocked = True
+        assert blocked is True
+
+        # Authorized execution
+        exec_rec = capacity_planning_service.execute_scaling_proposal(
+            proposal.proposal_id,
+            approval_token="OMNIA_M20_CRYPTO_TOKEN_CAP_9918",
+        )
+        assert exec_rec.status == "SUCCESS"
+        assert exec_rec.applied_capacity == 80.0
+
+        # Invariant: inventory updated
+        updated_r = capacity_planning_service.inventory.get_resource(r_db)
+        assert updated_r.total_capacity == 80.0
+        print("      [42] Governed Scaling & Module 20 Gate .. PASS (Enforced token gate & verified capacity expansion)")
+
+        # 37f. Continuous Monitoring & Executive HUD
+        eval_rec = capacity_planning_service.evaluate_forecast_accuracy(fc.forecast_id, actual_demand=fc.forecasted_demand)
+        assert eval_rec.percentage_error == 0.0
+
+        overview = capacity_planning_service.get_capacity_overview()
+        assert overview["total_monitored_resources"] >= 2
+        assert overview["projected_hourly_cost_usd"] > 0.0
+        print("      [42] Continuous Monitoring & Executive HUD PASS (Zero-drift forecast evaluation & cost overview)")
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        print(f"      [42] Capacity Planning Subsystem ....... FAIL ({e})")
+
     print("\n" + "=" * 60)
     print("Diagnostics complete.")
     print("=" * 60)

@@ -5867,7 +5867,187 @@ def orchestrate_and_verify_disaster_recovery(
     except Exception as e:
         return json.dumps({"success": False, "error": str(e)}, indent=2)
 
+
+# --- Module 42: Autonomous Capacity Planning & Elastic Resource Intelligence Tools ---
+@tool
+def register_capacity_resource(
+    resource_id: str,
+    resource_name: str,
+    dimension: str,
+    resource_type: str,
+    total_capacity: float,
+    unit: str,
+    source: str = "LOCAL_HOST",
+    associated_service: str = "omnia-core",
+) -> str:
+    """Registers an infrastructure resource into the multi-dimensional capacity inventory."""
+    from capacity_planning.service import capacity_planning_service
+    from capacity_planning.models import ResourceDimension, MetricUnit
+    import json
+    try:
+        dim = ResourceDimension(dimension.upper())
+        u = MetricUnit(unit.upper())
+        res = capacity_planning_service.register_resource(
+            resource_id=resource_id,
+            resource_name=resource_name,
+            dimension=dim,
+            resource_type=resource_type,
+            source=source,
+            total_capacity=total_capacity,
+            unit=u,
+            associated_service=associated_service,
+        )
+        return json.dumps({
+            "success": True,
+            "resource_id": res.resource_id,
+            "dimension": res.dimension.value,
+            "total_capacity": res.total_capacity,
+            "unit": res.unit.value,
+        }, indent=2)
+    except Exception as e:
+        return json.dumps({"success": False, "error": str(e)}, indent=2)
+
+@tool
+def record_capacity_telemetry(
+    resource_id: str,
+    current_value: float,
+    data_confidence: float = 1.0,
+) -> str:
+    """Records real-time capacity consumption and calculates available headroom."""
+    from capacity_planning.service import capacity_planning_service
+    import json
+    try:
+        m = capacity_planning_service.record_measurement(
+            resource_id=resource_id,
+            current_value=current_value,
+            data_confidence=data_confidence,
+        )
+        return json.dumps({
+            "success": True,
+            "measurement_id": m.measurement_id,
+            "resource_id": m.resource_id,
+            "utilization_pct": m.utilization_pct,
+            "available_headroom": m.available_headroom,
+            "status": m.collection_status,
+        }, indent=2)
+    except Exception as e:
+        return json.dumps({"success": False, "error": str(e)}, indent=2)
+
+@tool
+def forecast_infrastructure_capacity(
+    resource_id: str,
+    horizon: str = "24H",
+) -> str:
+    """Projects future resource demand and estimates hours until saturation."""
+    from capacity_planning.service import capacity_planning_service
+    from capacity_planning.models import ForecastHorizon
+    import json
+    try:
+        h = ForecastHorizon(horizon.upper())
+        fc = capacity_planning_service.forecast_capacity(resource_id=resource_id, horizon=h)
+        return json.dumps({
+            "success": True,
+            "forecast_id": fc.forecast_id,
+            "resource_id": fc.resource_id,
+            "horizon": fc.horizon.value,
+            "forecasted_demand": fc.forecasted_demand,
+            "projected_utilization_pct": fc.projected_utilization_pct,
+            "estimated_saturation_hours": fc.estimated_saturation_hours,
+            "confidence_score": fc.confidence_score,
+        }, indent=2)
+    except Exception as e:
+        return json.dumps({"success": False, "error": str(e)}, indent=2)
+
+@tool
+def detect_capacity_saturation_risks(
+    warning_threshold_pct: float = 75.0,
+    critical_threshold_pct: float = 90.0,
+) -> str:
+    """Scans all monitored infrastructure resources for impending saturation bottlenecks."""
+    from capacity_planning.service import capacity_planning_service
+    import json
+    try:
+        risks = capacity_planning_service.detect_saturation_risks(
+            warning_threshold_pct=warning_threshold_pct,
+            critical_threshold_pct=critical_threshold_pct,
+        )
+        return json.dumps({
+            "success": True,
+            "risks_detected_count": len(risks),
+            "risks": [
+                {
+                    "risk_id": r.risk_id,
+                    "resource_id": r.resource_id,
+                    "severity": r.severity.value,
+                    "utilization_pct": r.observed_utilization_pct,
+                    "tts_hours": r.estimated_time_to_saturation_hours,
+                    "mitigation": r.recommended_mitigation,
+                }
+                for r in risks
+            ],
+        }, indent=2)
+    except Exception as e:
+        return json.dumps({"success": False, "error": str(e)}, indent=2)
+
+@tool
+def simulate_workload_surge_scenario(
+    scenario_name: str,
+    workload_multiplier: float,
+    quota_reduction_pct: float = 0.0,
+) -> str:
+    """Simulates a counterfactual workload surge (e.g. 2x, 5x, 10x) against current capacity."""
+    from capacity_planning.service import capacity_planning_service
+    import json
+    try:
+        sim = capacity_planning_service.simulate_capacity_scenario(
+            scenario_name=scenario_name,
+            workload_multiplier=workload_multiplier,
+            quota_reduction_pct=quota_reduction_pct,
+        )
+        return json.dumps({
+            "success": True,
+            "simulation_id": sim.simulation_id,
+            "max_projected_utilization_pct": sim.max_projected_utilization_pct,
+            "bottlenecks": sim.bottleneck_resources,
+            "is_resilient": sim.is_resilient,
+            "recommended_action": sim.recommended_scaling_action,
+        }, indent=2)
+    except Exception as e:
+        return json.dumps({"success": False, "error": str(e)}, indent=2)
+
+@tool
+def execute_elastic_scaling_proposal(
+    proposal_id: str,
+    approval_token: str,
+) -> str:
+    """Executes a governed scaling action gated strictly behind a Module 20 approval token."""
+    from capacity_planning.service import capacity_planning_service
+    from capacity_planning.models import ScalingGovernanceMode
+    import json
+    try:
+        ex = capacity_planning_service.execute_scaling_proposal(
+            proposal_id=proposal_id,
+            approval_token=approval_token,
+            governance_mode=ScalingGovernanceMode.APPROVAL_REQUIRED,
+        )
+        return json.dumps({
+            "success": True,
+            "execution_id": ex.execution_id,
+            "resource_id": ex.resource_id,
+            "applied_capacity": ex.applied_capacity,
+            "previous_capacity": ex.previous_capacity,
+            "status": ex.status,
+        }, indent=2)
+    except Exception as e:
+        return json.dumps({"success": False, "error": str(e)}, indent=2)
+
 OMNIA_ALL_TOOLS = [
+    register_capacity_resource,
+    record_capacity_telemetry,
+    forecast_infrastructure_capacity,
+    detect_capacity_saturation_risks,
+    simulate_workload_surge_scenario,
+    execute_elastic_scaling_proposal,
     register_reliability_component,
     perform_failure_mode_analysis,
     generate_failure_scenario,

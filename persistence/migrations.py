@@ -7,7 +7,7 @@ from typing import List, Tuple
 
 logger = logging.getLogger("Omnia.Persistence.Migrations")
 
-CURRENT_SCHEMA_VERSION = 26
+CURRENT_SCHEMA_VERSION = 27
 
 MIGRATION_V1 = """
 -- Schema Version 1: Durable Task Graph & Crash Recovery Tables
@@ -3013,6 +3013,167 @@ CREATE TABLE IF NOT EXISTS rel_resilience_regressions (
 );
 """
 
+MIGRATION_V27 = """
+-- Schema Version 27: Autonomous Capacity Planning, Infrastructure Forecasting & Elastic Resource Intelligence
+
+CREATE TABLE IF NOT EXISTS cap_resources (
+    resource_id TEXT PRIMARY KEY,
+    resource_name TEXT NOT NULL,
+    dimension TEXT NOT NULL,
+    resource_type TEXT NOT NULL,
+    source TEXT NOT NULL,
+    total_capacity REAL NOT NULL,
+    unit TEXT NOT NULL,
+    associated_service TEXT NOT NULL,
+    is_active INTEGER DEFAULT 1,
+    metadata_json TEXT DEFAULT '{}',
+    created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_cap_res_dim ON cap_resources(dimension);
+CREATE INDEX IF NOT EXISTS idx_cap_res_svc ON cap_resources(associated_service);
+
+CREATE TABLE IF NOT EXISTS cap_measurements (
+    measurement_id TEXT PRIMARY KEY,
+    resource_id TEXT NOT NULL,
+    timestamp TEXT NOT NULL,
+    current_value REAL NOT NULL,
+    configured_capacity REAL NOT NULL,
+    available_headroom REAL NOT NULL,
+    utilization_pct REAL NOT NULL,
+    unit TEXT NOT NULL,
+    collection_status TEXT NOT NULL,
+    data_confidence REAL NOT NULL,
+    FOREIGN KEY(resource_id) REFERENCES cap_resources(resource_id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_cap_meas_res_ts ON cap_measurements(resource_id, timestamp);
+
+CREATE TABLE IF NOT EXISTS cap_workload_demands (
+    profile_id TEXT PRIMARY KEY,
+    category TEXT NOT NULL,
+    workload_name TEXT NOT NULL,
+    avg_cpu_consumption REAL NOT NULL,
+    avg_memory_mb REAL NOT NULL,
+    avg_duration_sec REAL NOT NULL,
+    request_rate_per_sec REAL DEFAULT 0.0,
+    burstiness_index REAL DEFAULT 1.0,
+    concurrency_requirement INTEGER DEFAULT 1,
+    sample_count INTEGER DEFAULT 1,
+    updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_cap_dem_cat ON cap_workload_demands(category);
+
+CREATE TABLE IF NOT EXISTS cap_forecasts (
+    forecast_id TEXT PRIMARY KEY,
+    resource_id TEXT NOT NULL,
+    horizon TEXT NOT NULL,
+    forecasted_demand REAL NOT NULL,
+    current_capacity REAL NOT NULL,
+    projected_headroom REAL NOT NULL,
+    projected_utilization_pct REAL NOT NULL,
+    estimated_saturation_hours REAL,
+    confidence_lower_bound REAL NOT NULL,
+    confidence_upper_bound REAL NOT NULL,
+    confidence_score REAL NOT NULL,
+    model_method TEXT NOT NULL,
+    data_quality TEXT NOT NULL,
+    generated_at TEXT NOT NULL,
+    FOREIGN KEY(resource_id) REFERENCES cap_resources(resource_id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_cap_fc_res_hor ON cap_forecasts(resource_id, horizon);
+
+CREATE TABLE IF NOT EXISTS cap_risks (
+    risk_id TEXT PRIMARY KEY,
+    resource_id TEXT NOT NULL,
+    severity TEXT NOT NULL,
+    observed_utilization_pct REAL NOT NULL,
+    estimated_time_to_saturation_hours REAL,
+    likely_cause TEXT,
+    expected_operational_impact TEXT,
+    recommended_mitigation TEXT,
+    confidence_level REAL NOT NULL,
+    is_resolved INTEGER DEFAULT 0,
+    detected_at TEXT NOT NULL,
+    FOREIGN KEY(resource_id) REFERENCES cap_resources(resource_id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_cap_risk_res ON cap_risks(resource_id);
+
+CREATE TABLE IF NOT EXISTS cap_scenarios (
+    scenario_id TEXT PRIMARY KEY,
+    scenario_name TEXT NOT NULL,
+    workload_multiplier REAL NOT NULL,
+    unavailable_resources_json TEXT DEFAULT '[]',
+    quota_reduction_pct REAL DEFAULT 0.0,
+    description TEXT
+);
+
+CREATE TABLE IF NOT EXISTS cap_simulations (
+    simulation_id TEXT PRIMARY KEY,
+    scenario_id TEXT NOT NULL,
+    max_projected_utilization_pct REAL NOT NULL,
+    bottleneck_resources_json TEXT DEFAULT '[]',
+    throughput_degradation_pct REAL DEFAULT 0.0,
+    latency_increase_factor REAL DEFAULT 1.0,
+    estimated_additional_cost_hr REAL DEFAULT 0.0,
+    recommended_scaling_action TEXT,
+    is_resilient INTEGER DEFAULT 1,
+    simulated_at TEXT NOT NULL,
+    FOREIGN KEY(scenario_id) REFERENCES cap_scenarios(scenario_id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS cap_plans (
+    plan_id TEXT PRIMARY KEY,
+    title TEXT NOT NULL,
+    horizon TEXT NOT NULL,
+    current_health_posture TEXT NOT NULL,
+    identified_gaps_json TEXT DEFAULT '[]',
+    recommended_strategies_json TEXT DEFAULT '[]',
+    estimated_total_cost_delta REAL DEFAULT 0.0,
+    required_governance_mode TEXT NOT NULL,
+    approval_token TEXT,
+    status TEXT NOT NULL,
+    created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS cap_scaling_proposals (
+    proposal_id TEXT PRIMARY KEY,
+    plan_id TEXT NOT NULL,
+    resource_id TEXT NOT NULL,
+    strategy_type TEXT NOT NULL,
+    from_capacity REAL NOT NULL,
+    to_capacity REAL NOT NULL,
+    cost_impact_per_hr REAL NOT NULL,
+    status TEXT NOT NULL,
+    approval_token TEXT,
+    created_at TEXT NOT NULL,
+    FOREIGN KEY(plan_id) REFERENCES cap_plans(plan_id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS cap_scaling_executions (
+    execution_id TEXT PRIMARY KEY,
+    proposal_id TEXT NOT NULL,
+    resource_id TEXT NOT NULL,
+    applied_capacity REAL NOT NULL,
+    previous_capacity REAL NOT NULL,
+    status TEXT NOT NULL,
+    executed_by TEXT NOT NULL,
+    execution_notes TEXT,
+    executed_at TEXT NOT NULL,
+    FOREIGN KEY(proposal_id) REFERENCES cap_scaling_proposals(proposal_id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS cap_forecast_evaluations (
+    evaluation_id TEXT PRIMARY KEY,
+    forecast_id TEXT NOT NULL,
+    resource_id TEXT NOT NULL,
+    predicted_demand REAL NOT NULL,
+    actual_demand REAL NOT NULL,
+    absolute_error REAL NOT NULL,
+    percentage_error REAL NOT NULL,
+    within_confidence_bounds INTEGER NOT NULL,
+    evaluated_at TEXT NOT NULL
+);
+"""
+
 def backup_database(db_path: str, backup_dir: str = "persistence_backups") -> str:
     """Creates a timestamped snapshot of the SQLite database prior to any schema modification."""
     if not os.path.exists(db_path):
@@ -3335,6 +3496,17 @@ def apply_migrations(db_path: str) -> int:
             conn.commit()
             logger.info("Migration v26 applied successfully.")
             current_version = 26
+
+        if current_version < 27:
+            logger.info("Applying Migration v27 (Autonomous Capacity Planning & Infrastructure Forecasting Tables)...")
+            cursor.executescript(MIGRATION_V27)
+            cursor.execute(
+                "INSERT INTO schema_migrations (version, applied_at, description) VALUES (?, ?, ?)",
+                (27, time.time(), "Autonomous Capacity Planning, Infrastructure Forecasting and Elastic Resource Intelligence tables")
+            )
+            conn.commit()
+            logger.info("Migration v27 applied successfully.")
+            current_version = 27
 
         return current_version
     except Exception as e:
