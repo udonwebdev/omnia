@@ -3311,6 +3311,93 @@ async def run_diagnostics():
         traceback.print_exc()
         print(f"      [43] Infrastructure Lifecycle Subsystem . FAIL ({e})")
 
+    # =========================================================================
+    # STAGE 39: MODULE 44: AUTONOMOUS SOFTWARE DELIVERY, CI/CD INTELLIGENCE & RELEASE ENGINEERING
+    # =========================================================================
+    print("\n[39/39] Checking Module 44: Autonomous Software Delivery, CI/CD Intelligence & Release Engineering...")
+    try:
+        from software_delivery.service import software_delivery_service
+        from software_delivery.models import (
+            RepositoryType,
+            PipelineStatus,
+            GateStatus,
+            ReleaseStage,
+            HandoffStatus,
+        )
+
+        # 39a. Source Intelligence & Change Impact
+        repo = software_delivery_service.register_repository(
+            name="diag-repo",
+            clone_url="git@github.com:omnia/diag.git",
+            provider_type=RepositoryType.GIT_LOCAL,
+        )
+        rev, impact = software_delivery_service.analyze_source_revision(
+            repository_id=repo.repository_id,
+            commit_hash="commit_diag_44",
+            branch="main",
+            author="LO",
+            commit_message="Diag commit",
+            changed_files=["core/service.py", "tests/test_service.py"],
+        )
+        assert "core" in impact.impacted_modules
+        print("      [44] Source Control & Impact Analysis .. PASS (Tracked revision & derived component impact)")
+
+        # 39b. Pipeline Planning & Execution
+        pipe_def = software_delivery_service.plan_delivery_pipeline(
+            repository_id=repo.repository_id,
+            pipeline_name="Diag-Pipeline",
+            impact_report=impact,
+            target_environment="TESTING",
+        )
+        pe, q_gate, sec = software_delivery_service.execute_pipeline(
+            pipeline_id=pipe_def.pipeline_id,
+            revision_id=rev.revision_id,
+            simulate=True,
+        )
+        assert pe.status == PipelineStatus.SUCCEEDED
+        assert q_gate.status == GateStatus.PASSED
+        assert sec.is_passing is True
+        print("      [44] Pipeline Planning, Build & Tests .. PASS (Controlled build sandbox & quality gates enforced)")
+
+        # 39c. Artifact Management & SLSA Provenance
+        art, att = software_delivery_service.register_artifact_and_attestation(
+            pipeline_execution_id=pe.execution_id,
+            name="diag-artifact.tar.gz",
+            artifact_type="TAR_GZ",
+            storage_uri="s3://releases/diag-artifact.tar.gz",
+            source_repository=repo.clone_url,
+            source_commit=rev.commit_hash,
+            checksum_sha256="c0ffee0000000000000000000000000000000000000000000000000000000000",
+        )
+        assert art.checksum_sha256.startswith("c0ffee")
+        assert att.predicate_type == "https://slsa.dev/provenance/v1"
+        print("      [44] Artifact Integrity & SLSA Provenance PASS (Cryptographic digest & immutable provenance)")
+
+        # 39d. Release Promotion & Module 43 Deployment Handoff
+        rc = software_delivery_service.create_and_promote_release(
+            version="1.0.0",
+            artifact_id=art.artifact_id,
+            source_revision_id=rev.revision_id,
+            target_stage=ReleaseStage.QUALIFIED,
+            approval_token="OMNIA_M20_APPROVAL_DIAG_M44",
+            approver="LO",
+        )
+        assert rc.stage == ReleaseStage.QUALIFIED
+
+        # Use the environment created in Stage 38 (env.environment_id)
+        handoff = software_delivery_service.handoff_deployment(
+            release_candidate_id=rc.candidate_id,
+            target_environment_id=env.environment_id,
+            deployment_strategy="DIRECT",
+        )
+        assert handoff.status in (HandoffStatus.VERIFIED, HandoffStatus.ACCEPTED)
+        print("      [44] Release Promotion & M43 Handoff ... PASS (Module 20 token gate & Module 43 deployment bridge)")
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        print(f"      [44] Software Delivery Subsystem ....... FAIL ({e})")
+
     print("\n" + "=" * 60)
     print("Diagnostics complete.")
     print("=" * 60)

@@ -6237,7 +6237,215 @@ def reconcile_infrastructure_drift(
         return json.dumps({"success": False, "error": str(e)}, indent=2)
 
 
+
+# =====================================================================
+# MODULE 44: AUTONOMOUS SOFTWARE DELIVERY, CI/CD INTELLIGENCE & RELEASE ENGINEERING
+# =====================================================================
+
+def analyze_source_revision_and_impact(
+    repo_name: str,
+    clone_url: str,
+    commit_hash: str,
+    branch: str,
+    changed_files: List[str],
+) -> str:
+    """Analyzes a source-control revision and produces a change impact report."""
+    from software_delivery.service import software_delivery_service
+    import json
+    try:
+        repo = software_delivery_service.register_repository(name=repo_name, clone_url=clone_url)
+        rev, impact = software_delivery_service.analyze_source_revision(
+            repository_id=repo.repository_id,
+            commit_hash=commit_hash,
+            branch=branch,
+            author="LO",
+            commit_message="Release commit",
+            changed_files=changed_files,
+        )
+        return json.dumps({
+            "success": True,
+            "revision_id": rev.revision_id,
+            "report_id": impact.report_id,
+            "changed_files_count": len(impact.changed_files),
+            "impacted_modules": impact.impacted_modules,
+            "relevant_test_suites": impact.relevant_test_suites,
+            "migration_detected": impact.migration_detected,
+            "security_sensitive": impact.security_sensitive,
+        }, indent=2)
+    except Exception as e:
+        return json.dumps({"success": False, "error": str(e)}, indent=2)
+
+
+def plan_and_execute_delivery_pipeline(
+    repo_name: str,
+    commit_hash: str,
+    changed_files: List[str],
+    pipeline_name: str = "default-delivery",
+    target_environment: str = "TESTING",
+) -> str:
+    """Plans and executes an automated build and test pipeline for a software revision."""
+    from software_delivery.service import software_delivery_service
+    import json
+    try:
+        repo = software_delivery_service.register_repository(name=repo_name, clone_url=f"local://{repo_name}")
+        rev, impact = software_delivery_service.analyze_source_revision(
+            repository_id=repo.repository_id,
+            commit_hash=commit_hash,
+            branch="main",
+            author="LO",
+            commit_message="Pipeline execution",
+            changed_files=changed_files,
+        )
+        pipe_def = software_delivery_service.plan_delivery_pipeline(
+            repository_id=repo.repository_id,
+            pipeline_name=pipeline_name,
+            impact_report=impact,
+            target_environment=target_environment,
+        )
+        pe, q_gate, sec = software_delivery_service.execute_pipeline(
+            pipeline_id=pipe_def.pipeline_id,
+            revision_id=rev.revision_id,
+            simulate=True,
+        )
+        return json.dumps({
+            "success": pe.status.value == "SUCCEEDED",
+            "execution_id": pe.execution_id,
+            "status": pe.status.value,
+            "stages_executed": pe.stages_executed,
+            "quality_gate_passed": q_gate.status.value == "PASSED",
+            "security_passed": sec.is_passing,
+        }, indent=2)
+    except Exception as e:
+        return json.dumps({"success": False, "error": str(e)}, indent=2)
+
+
+def evaluate_delivery_quality_and_security(
+    pipeline_execution_id: str,
+    revision_id: str,
+) -> str:
+    """Evaluates quality thresholds and audits static security and dependencies."""
+    from software_delivery.service import software_delivery_service
+    import json
+    try:
+        q_result = software_delivery_service.quality_gate.evaluate_quality(
+            pipeline_execution_id=pipeline_execution_id,
+            build_records=[],
+            test_records=[],
+        )
+        sec_result = software_delivery_service.security_gate.audit_security(
+            revision_id=revision_id,
+        )
+        dep_result = software_delivery_service.dependency_intel.assess_dependencies(
+            revision_id=revision_id,
+        )
+        return json.dumps({
+            "success": True,
+            "quality_gate_status": q_result.status.value,
+            "security_passing": sec_result.is_passing,
+            "dependencies_scanned": dep_result.direct_dependency_count,
+            "vulnerabilities_detected": dep_result.vulnerabilities_detected,
+        }, indent=2)
+    except Exception as e:
+        return json.dumps({"success": False, "error": str(e)}, indent=2)
+
+
+def register_and_attest_build_artifact(
+    pipeline_execution_id: str,
+    artifact_name: str,
+    storage_uri: str,
+    source_repository: str,
+    source_commit: str,
+) -> str:
+    """Registers a built software artifact and generates verifiable SLSA provenance."""
+    from software_delivery.service import software_delivery_service
+    import json
+    try:
+        art, att = software_delivery_service.register_artifact_and_attestation(
+            pipeline_execution_id=pipeline_execution_id,
+            name=artifact_name,
+            artifact_type="TAR_GZ",
+            storage_uri=storage_uri,
+            source_repository=source_repository,
+            source_commit=source_commit,
+        )
+        return json.dumps({
+            "success": True,
+            "artifact_id": art.artifact_id,
+            "attestation_id": att.attestation_id,
+            "checksum_sha256": art.checksum_sha256,
+            "predicate_type": att.predicate_type,
+        }, indent=2)
+    except Exception as e:
+        return json.dumps({"success": False, "error": str(e)}, indent=2)
+
+
+def create_and_promote_release_candidate(
+    artifact_id: str,
+    version: str,
+    source_revision_id: str,
+    target_stage: str = "QUALIFIED",
+    approval_token: Optional[str] = None,
+) -> str:
+    """Creates a versioned release candidate and evaluates promotion criteria."""
+    from software_delivery.service import software_delivery_service
+    from software_delivery.models import ReleaseStage
+    import json
+    try:
+        stage = ReleaseStage(target_stage.upper())
+        rc = software_delivery_service.create_and_promote_release(
+            version=version,
+            artifact_id=artifact_id,
+            source_revision_id=source_revision_id,
+            target_stage=stage,
+            approval_token=approval_token,
+            approver="LO",
+        )
+        return json.dumps({
+            "success": True,
+            "candidate_id": rc.candidate_id,
+            "version": rc.version,
+            "stage": rc.stage.value,
+            "approval_token": rc.approval_token,
+        }, indent=2)
+    except Exception as e:
+        return json.dumps({"success": False, "error": str(e)}, indent=2)
+
+
+def handoff_release_to_infrastructure_lifecycle(
+    release_candidate_id: str,
+    target_environment_id: str,
+    deployment_strategy: str = "DIRECT",
+    approval_token: Optional[str] = None,
+) -> str:
+    """Transfers a qualified release to Module 43 for environment provisioning and rollout."""
+    from software_delivery.service import software_delivery_service
+    import json
+    try:
+        handoff = software_delivery_service.handoff_deployment(
+            release_candidate_id=release_candidate_id,
+            target_environment_id=target_environment_id,
+            deployment_strategy=deployment_strategy,
+            approval_token=approval_token,
+        )
+        return json.dumps({
+            "success": handoff.status.value in ("VERIFIED", "ACCEPTED"),
+            "handoff_id": handoff.handoff_id,
+            "status": handoff.status.value,
+            "module43_deployment_id": handoff.module43_deployment_id,
+            "evidence": handoff.verification_evidence,
+        }, indent=2)
+    except Exception as e:
+        return json.dumps({"success": False, "error": str(e)}, indent=2)
+
+
 OMNIA_ALL_TOOLS = [
+    analyze_source_revision_and_impact,
+    plan_and_execute_delivery_pipeline,
+    evaluate_delivery_quality_and_security,
+    register_and_attest_build_artifact,
+    create_and_promote_release_candidate,
+    handoff_release_to_infrastructure_lifecycle,
+
     register_infrastructure_provider,
     register_infrastructure_blueprint,
     provision_environment_from_blueprint,

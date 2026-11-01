@@ -7,7 +7,7 @@ from typing import List, Tuple
 
 logger = logging.getLogger("Omnia.Persistence.Migrations")
 
-CURRENT_SCHEMA_VERSION = 28
+CURRENT_SCHEMA_VERSION = 29
 
 MIGRATION_V1 = """
 -- Schema Version 1: Durable Task Graph & Crash Recovery Tables
@@ -3339,6 +3339,234 @@ CREATE TABLE IF NOT EXISTS infra_decommission_plans (
 );
 """
 
+MIGRATION_V29 = """
+-- Schema Version 29: Autonomous Software Delivery, CI/CD Intelligence & Release Engineering
+
+CREATE TABLE IF NOT EXISTS delivery_repositories (
+    repository_id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    provider_type TEXT NOT NULL,
+    clone_url TEXT NOT NULL,
+    default_branch TEXT DEFAULT 'main',
+    is_active INTEGER DEFAULT 1,
+    metadata_json TEXT DEFAULT '{}',
+    registered_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS delivery_revisions (
+    revision_id TEXT PRIMARY KEY,
+    repository_id TEXT NOT NULL,
+    commit_hash TEXT NOT NULL,
+    branch TEXT NOT NULL,
+    author TEXT NOT NULL,
+    commit_message TEXT NOT NULL,
+    timestamp TEXT NOT NULL,
+    parent_commits_json TEXT DEFAULT '[]',
+    FOREIGN KEY(repository_id) REFERENCES delivery_repositories(repository_id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS delivery_impact_reports (
+    report_id TEXT PRIMARY KEY,
+    revision_id TEXT NOT NULL,
+    repository_id TEXT NOT NULL,
+    changed_files_json TEXT DEFAULT '[]',
+    change_categories_json TEXT DEFAULT '[]',
+    impacted_modules_json TEXT DEFAULT '[]',
+    relevant_test_suites_json TEXT DEFAULT '[]',
+    migration_detected INTEGER DEFAULT 0,
+    security_sensitive INTEGER DEFAULT 0,
+    confidence_score REAL DEFAULT 1.0,
+    evidence_json TEXT DEFAULT '{}',
+    created_at TEXT NOT NULL,
+    FOREIGN KEY(revision_id) REFERENCES delivery_revisions(revision_id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS delivery_pipeline_definitions (
+    pipeline_id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    repository_id TEXT NOT NULL,
+    stages_json TEXT DEFAULT '[]',
+    triggers_json TEXT DEFAULT '[]',
+    env_vars_json TEXT DEFAULT '{}',
+    timeout_seconds INTEGER DEFAULT 1800,
+    is_active INTEGER DEFAULT 1,
+    created_at TEXT NOT NULL,
+    FOREIGN KEY(repository_id) REFERENCES delivery_repositories(repository_id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS delivery_pipeline_executions (
+    execution_id TEXT PRIMARY KEY,
+    pipeline_id TEXT NOT NULL,
+    revision_id TEXT NOT NULL,
+    status TEXT NOT NULL,
+    stages_executed_json TEXT DEFAULT '[]',
+    started_at TEXT NOT NULL,
+    completed_at TEXT,
+    total_duration_seconds REAL DEFAULT 0.0,
+    error_summary TEXT,
+    FOREIGN KEY(pipeline_id) REFERENCES delivery_pipeline_definitions(pipeline_id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS delivery_stage_executions (
+    stage_id TEXT PRIMARY KEY,
+    pipeline_execution_id TEXT NOT NULL,
+    stage_type TEXT NOT NULL,
+    status TEXT NOT NULL,
+    started_at TEXT NOT NULL,
+    completed_at TEXT,
+    duration_seconds REAL DEFAULT 0.0,
+    exit_code INTEGER DEFAULT 0,
+    logs TEXT DEFAULT '',
+    error_message TEXT,
+    FOREIGN KEY(pipeline_execution_id) REFERENCES delivery_pipeline_executions(execution_id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS delivery_build_executions (
+    build_id TEXT PRIMARY KEY,
+    pipeline_execution_id TEXT NOT NULL,
+    command TEXT NOT NULL,
+    status TEXT NOT NULL,
+    artifact_paths_json TEXT DEFAULT '[]',
+    logs TEXT DEFAULT '',
+    duration_seconds REAL DEFAULT 0.0,
+    executed_at TEXT NOT NULL,
+    FOREIGN KEY(pipeline_execution_id) REFERENCES delivery_pipeline_executions(execution_id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS delivery_test_executions (
+    test_run_id TEXT PRIMARY KEY,
+    pipeline_execution_id TEXT NOT NULL,
+    suite_name TEXT NOT NULL,
+    total_tests INTEGER DEFAULT 0,
+    passed_tests INTEGER DEFAULT 0,
+    failed_tests INTEGER DEFAULT 0,
+    skipped_tests INTEGER DEFAULT 0,
+    duration_seconds REAL DEFAULT 0.0,
+    coverage_pct REAL,
+    status TEXT NOT NULL,
+    failure_details_json TEXT DEFAULT '[]',
+    executed_at TEXT NOT NULL,
+    FOREIGN KEY(pipeline_execution_id) REFERENCES delivery_pipeline_executions(execution_id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS delivery_quality_gate_results (
+    gate_id TEXT PRIMARY KEY,
+    pipeline_execution_id TEXT NOT NULL,
+    status TEXT NOT NULL,
+    score REAL DEFAULT 1.0,
+    metrics_json TEXT DEFAULT '{}',
+    violations_json TEXT DEFAULT '[]',
+    evaluated_at TEXT NOT NULL,
+    FOREIGN KEY(pipeline_execution_id) REFERENCES delivery_pipeline_executions(execution_id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS delivery_dependency_assessments (
+    assessment_id TEXT PRIMARY KEY,
+    revision_id TEXT NOT NULL,
+    direct_dependency_count INTEGER DEFAULT 0,
+    transitive_dependency_count INTEGER DEFAULT 0,
+    vulnerabilities_detected INTEGER DEFAULT 0,
+    deprecated_dependencies_json TEXT DEFAULT '[]',
+    outdated_dependencies_json TEXT DEFAULT '[]',
+    findings_json TEXT DEFAULT '[]',
+    created_at TEXT NOT NULL,
+    FOREIGN KEY(revision_id) REFERENCES delivery_revisions(revision_id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS delivery_security_assessments (
+    assessment_id TEXT PRIMARY KEY,
+    revision_id TEXT NOT NULL,
+    secrets_found_count INTEGER DEFAULT 0,
+    sast_violations_count INTEGER DEFAULT 0,
+    highest_severity TEXT DEFAULT 'INFO',
+    findings_json TEXT DEFAULT '[]',
+    is_passing INTEGER DEFAULT 1,
+    scanned_at TEXT NOT NULL,
+    FOREIGN KEY(revision_id) REFERENCES delivery_revisions(revision_id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS delivery_artifacts (
+    artifact_id TEXT PRIMARY KEY,
+    pipeline_execution_id TEXT NOT NULL,
+    name TEXT NOT NULL,
+    artifact_type TEXT NOT NULL,
+    storage_uri TEXT NOT NULL,
+    checksum_sha256 TEXT NOT NULL,
+    size_bytes INTEGER DEFAULT 0,
+    metadata_json TEXT DEFAULT '{}',
+    created_at TEXT NOT NULL,
+    FOREIGN KEY(pipeline_execution_id) REFERENCES delivery_pipeline_executions(execution_id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS delivery_attestations (
+    attestation_id TEXT PRIMARY KEY,
+    artifact_id TEXT NOT NULL,
+    predicate_type TEXT DEFAULT 'https://slsa.dev/provenance/v1',
+    builder_id TEXT NOT NULL,
+    source_repository TEXT NOT NULL,
+    source_commit TEXT NOT NULL,
+    build_config_json TEXT DEFAULT '{}',
+    is_signed INTEGER DEFAULT 0,
+    signature_ref TEXT,
+    created_at TEXT NOT NULL,
+    FOREIGN KEY(artifact_id) REFERENCES delivery_artifacts(artifact_id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS delivery_regression_findings (
+    regression_id TEXT PRIMARY KEY,
+    pipeline_execution_id TEXT NOT NULL,
+    component_name TEXT NOT NULL,
+    metric_name TEXT NOT NULL,
+    baseline_value REAL NOT NULL,
+    current_value REAL NOT NULL,
+    delta_pct REAL NOT NULL,
+    severity TEXT DEFAULT 'MEDIUM',
+    description TEXT,
+    detected_at TEXT NOT NULL,
+    FOREIGN KEY(pipeline_execution_id) REFERENCES delivery_pipeline_executions(execution_id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS delivery_repair_attempts (
+    repair_id TEXT PRIMARY KEY,
+    pipeline_execution_id TEXT NOT NULL,
+    failure_type TEXT NOT NULL,
+    proposed_patch TEXT NOT NULL,
+    applied INTEGER DEFAULT 0,
+    retest_success INTEGER DEFAULT 0,
+    retry_count INTEGER DEFAULT 1,
+    max_retries_allowed INTEGER DEFAULT 3,
+    approval_token TEXT,
+    created_at TEXT NOT NULL,
+    FOREIGN KEY(pipeline_execution_id) REFERENCES delivery_pipeline_executions(execution_id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS delivery_release_candidates (
+    candidate_id TEXT PRIMARY KEY,
+    version TEXT NOT NULL,
+    artifact_id TEXT NOT NULL,
+    source_revision_id TEXT NOT NULL,
+    stage TEXT NOT NULL,
+    release_notes TEXT,
+    approval_token TEXT,
+    approver TEXT,
+    created_at TEXT NOT NULL,
+    FOREIGN KEY(artifact_id) REFERENCES delivery_artifacts(artifact_id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS delivery_deployment_handoffs (
+    handoff_id TEXT PRIMARY KEY,
+    release_candidate_id TEXT NOT NULL,
+    target_environment_id TEXT NOT NULL,
+    deployment_strategy TEXT DEFAULT 'DIRECT',
+    status TEXT NOT NULL,
+    module43_deployment_id TEXT,
+    verification_evidence_json TEXT DEFAULT '{}',
+    requested_at TEXT NOT NULL,
+    completed_at TEXT,
+    FOREIGN KEY(release_candidate_id) REFERENCES delivery_release_candidates(candidate_id) ON DELETE CASCADE
+);
+"""
+
 def backup_database(db_path: str, backup_dir: str = "persistence_backups") -> str:
     """Creates a timestamped snapshot of the SQLite database prior to any schema modification."""
     if not os.path.exists(db_path):
@@ -3683,6 +3911,17 @@ def apply_migrations(db_path: str) -> int:
             conn.commit()
             logger.info("Migration v28 applied successfully.")
             current_version = 28
+
+        if current_version < 29:
+            logger.info("Applying Migration v29 (Autonomous Software Delivery & CI/CD Intelligence Tables)...")
+            cursor.executescript(MIGRATION_V29)
+            cursor.execute(
+                "INSERT INTO schema_migrations (version, applied_at, description) VALUES (?, ?, ?)",
+                (29, time.time(), "Autonomous Software Delivery, CI/CD Intelligence and Release Engineering tables")
+            )
+            conn.commit()
+            logger.info("Migration v29 applied successfully.")
+            current_version = 29
 
         return current_version
     except Exception as e:
