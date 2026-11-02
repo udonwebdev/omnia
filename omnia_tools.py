@@ -7656,6 +7656,142 @@ def generate_privacy_posture_report(
     except Exception as e:
         return json.dumps({"success": False, "error": str(e)}, indent=2)
 
+
+
+# --- Module 52: Autonomous Data Loss Prevention, Sensitive Information Monitoring & Exfiltration Defense Tools ---
+
+@tool
+def detect_sensitive_information(
+    text: str,
+    source_ref: str = "payload",
+    redact: bool = False
+) -> str:
+    """Inspects text or payload metadata for sensitive tokens, credentials, PII, and financial identifiers."""
+    from dlp.service import dlp_service
+    import json
+    try:
+        res = dlp_service.detect_sensitive_information(text=text, source_ref=source_ref, redact=redact)
+        return json.dumps({"success": True, **res}, indent=2)
+    except Exception as e:
+        return json.dumps({"success": False, "error": str(e)}, indent=2)
+
+
+@tool
+def register_protected_content_fingerprint(
+    name: str,
+    content: str,
+    data_category: str = "INTELLECTUAL_PROPERTY",
+    algorithm: str = "SHA256_EXACT",
+    threshold: float = 0.8,
+    metadata_json: Optional[str] = None
+) -> str:
+    """Computes and records exact or shingle fingerprints for protected documents and datasets."""
+    from dlp.service import dlp_service
+    import json
+    try:
+        meta = json.loads(metadata_json) if metadata_json else None
+        fp = dlp_service.register_protected_content_fingerprint(
+            name=name,
+            content=content,
+            data_category=data_category,
+            algorithm=algorithm,
+            threshold=threshold,
+            metadata=meta
+        )
+        return json.dumps({"success": True, "fingerprint": fp.to_dict()}, indent=2)
+    except Exception as e:
+        return json.dumps({"success": False, "error": str(e)}, indent=2)
+
+
+@tool
+def evaluate_data_movement_policy(
+    actor_id: str,
+    device_id: str,
+    source_location: str,
+    destination_location: str,
+    channel: str = "NETWORK",
+    volume_bytes: int = 1024,
+    payload_text: Optional[str] = None,
+    is_authorized: bool = True,
+    metadata_json: Optional[str] = None
+) -> str:
+    """Ingests a data movement event and evaluates applicable DLP policy decisions."""
+    from dlp.service import dlp_service
+    import json
+    try:
+        meta = json.loads(metadata_json) if metadata_json else None
+        res = dlp_service.evaluate_data_movement_policy(
+            actor_id=actor_id,
+            device_id=device_id,
+            source_location=source_location,
+            destination_location=destination_location,
+            channel=channel,
+            volume_bytes=volume_bytes,
+            payload_text=payload_text,
+            is_authorized=is_authorized,
+            metadata=meta
+        )
+        return json.dumps({"success": True, **res}, indent=2)
+    except Exception as e:
+        return json.dumps({"success": False, "error": str(e)}, indent=2)
+
+
+@tool
+def detect_data_exfiltration_anomalies(
+    event_id: str,
+    custom_context_json: Optional[str] = None
+) -> str:
+    """Analyzes transfer patterns for exfiltration anomalies, computing risk scores and insider risk signals."""
+    from dlp.service import dlp_service
+    import json
+    try:
+        ctx = json.loads(custom_context_json) if custom_context_json else None
+        res = dlp_service.detect_data_exfiltration_anomalies(event_id=event_id, custom_context=ctx)
+        return json.dumps({"success": True, **res}, indent=2)
+    except Exception as e:
+        return json.dumps({"success": False, "error": str(e)}, indent=2)
+
+
+@tool
+def execute_dlp_enforcement_action(
+    decision_id: str,
+    approval_token: Optional[str] = None,
+    is_simulation: bool = False
+) -> str:
+    """Executes and verifies a transfer control action (BLOCK, QUARANTINE, REDACT) with approval check."""
+    from dlp.service import dlp_service
+    import json
+    try:
+        action = dlp_service.execute_dlp_enforcement_action(
+            decision_id=decision_id,
+            approval_token=approval_token,
+            is_simulation=is_simulation
+        )
+        return json.dumps({"success": True, "action": action.to_dict()}, indent=2)
+    except Exception as e:
+        return json.dumps({"success": False, "error": str(e)}, indent=2)
+
+
+@tool
+def generate_dlp_operations_report(
+    title: str = "OMNIA DLP Operations Intelligence Report",
+    reporting_actor: str = "dlp_operations_officer",
+    metadata_json: Optional[str] = None
+) -> str:
+    """Compiles persisted DLP metrics into a cryptographically sealed operations report."""
+    from dlp.service import dlp_service
+    import json
+    try:
+        meta = json.loads(metadata_json) if metadata_json else None
+        report = dlp_service.generate_dlp_operations_report(
+            title=title,
+            reporting_actor=reporting_actor,
+            metadata=meta
+        )
+        return json.dumps({"success": True, "report": report.to_dict()}, indent=2)
+    except Exception as e:
+        return json.dumps({"success": False, "error": str(e)}, indent=2)
+
 OMNIA_ALL_TOOLS = [
     register_security_telemetry_source,
     ingest_and_evaluate_security_telemetry,
@@ -7983,6 +8119,12 @@ OMNIA_ALL_TOOLS = [
     evaluate_retention_and_orchestrate_deletion,
     manage_data_subject_request,
     generate_privacy_posture_report,
+    detect_sensitive_information,
+    register_protected_content_fingerprint,
+    evaluate_data_movement_policy,
+    detect_data_exfiltration_anomalies,
+    execute_dlp_enforcement_action,
+    generate_dlp_operations_report,
 ]
 
 # Backward compatibility alias

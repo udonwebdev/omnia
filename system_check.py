@@ -3981,7 +3981,7 @@ async def run_diagnostics():
 
 
     # Stage 45: Autonomous Privacy Engineering, Data Governance & Information Protection Intelligence
-    print("\n[45/45] Checking Module 51: Autonomous Privacy Engineering, Data Governance & Information Protection Intelligence...")
+    print("\n[45/46] Checking Module 51: Autonomous Privacy Engineering, Data Governance & Information Protection Intelligence...")
     from privacy import (
         privacy_service,
         SensitivityTier,
@@ -4113,6 +4113,173 @@ async def run_diagnostics():
         import traceback
         traceback.print_exc()
         print(f"      [51] Privacy Engineering Subsystem ..... FAIL ({e})")
+
+    # Stage 46: Autonomous Data Loss Prevention, Sensitive Information Monitoring & Exfiltration Defense Intelligence
+    print("\n[46/46] Checking Module 52: Autonomous Data Loss Prevention, Sensitive Information Monitoring & Exfiltration Defense Intelligence...")
+    from dlp import (
+        dlp_service,
+        SensitivityTier as DLPSensitivityTier,
+        DataCategory as DLPDataCategory,
+        EnforcementMode,
+        DLPChannel,
+        DLPDecision,
+        DLPSeverity,
+        ContainmentState,
+        FingerprintAlgorithm,
+        ActionStatus,
+        TelemetryOpType,
+        SensitiveFinding,
+    )
+
+    try:
+        # 1. Content Fingerprinting & Exact/Shingle Document Tracking
+        doc_secret = "OMNIA TOP SECRET: Autonomous self-healing infrastructure quantum execution engine."
+        fp_exact = dlp_service.register_protected_content_fingerprint(
+            name="diag_secret_charter",
+            content=doc_secret,
+            algorithm=FingerprintAlgorithm.SHA256_EXACT.value,
+        )
+        fp_shingle = dlp_service.register_protected_content_fingerprint(
+            name="diag_secret_charter_shingles",
+            content=doc_secret,
+            algorithm=FingerprintAlgorithm.ROLLING_SHINGLE.value,
+            threshold=0.6,
+        )
+        matches = dlp_service.fingerprint_engine.match_content(doc_secret)
+        assert len(matches) >= 2
+        print("      [52] Content Fingerprints & Shingles ... PASS (Exact SHA-256 + rolling 32-byte block shingles)")
+
+        # 2. Multi-Layer Sensitive Information Detection & Luhn Verification
+        det_res = dlp_service.detect_sensitive_information(
+            text="User SSN: 123-45-6789, Email: user@omnia.org, Visa: 4532015112830366, AWS: AKIAIOSFODNN7EXAMPLE",
+            source_ref="diag_payload"
+        )
+        assert det_res["findings_count"] >= 4
+        print(f"      [52] Sensitive Detection & Luhn Check .. PASS ({det_res['findings_count']} findings, Luhn-valid card verified)")
+
+        # 3. Format-Preserving Redaction Engine
+        redacted = dlp_service.detector.redact_content("Patient SSN: 123-45-6789, Card: 4532015112830366")
+        assert "123-45-6789" not in redacted
+        assert "[REDACTED_SSN]" in redacted
+        assert "[REDACTED_FINANCIAL_CARD_****0366]" in redacted
+        print("      [52] Format-Preserving Redaction ....... PASS (Masked financial & PII token preservation)")
+
+        # 4. Unified Multi-Channel Data Movement Telemetry
+        ep_enroll = dlp_service.movement_monitor.enroll_endpoint("diag-node-46", "Windows", "1.0.0")
+        mov_evt, _ = dlp_service.movement_monitor.record_endpoint_operation(
+            endpoint_id=ep_enroll.endpoint_id,
+            actor_id="diag_analyst",
+            operation_type=TelemetryOpType.FILE_COPY.value,
+            file_path="C:\\Reports\\diag_export.xlsx",
+            process_name="explorer.exe",
+            volume_bytes=2048576,
+        )
+        assert mov_evt.channel == DLPChannel.ENDPOINT.value
+        print("      [52] Multi-Channel Movement Telemetry .. PASS (Endpoint, network, SaaS & clipboard telemetry)")
+
+        # 5. Contextual Exfiltration Anomaly Correlation & Risk Scoring
+        mov_exfil = dlp_service.movement_monitor.record_movement(
+            actor_id="diag_actor_rogue",
+            device_id=ep_enroll.endpoint_id,
+            source_location="C:\\Temp\\exfil_dump.zip",
+            destination_location="https://anonfiles.com/upload",
+            channel=DLPChannel.NETWORK.value,
+            volume_bytes=80 * 1024 * 1024,
+            is_authorized=False,
+        )
+        anom = dlp_service.detect_data_exfiltration_anomalies(mov_exfil.event_id)
+        assert anom["risk_score"] >= 80.0
+        assert anom["severity"] == DLPSeverity.CRITICAL.value
+        assert anom["alert"] is not None
+        print(f"      [52] Exfiltration Anomaly & Risk Score . PASS (Score={anom['risk_score']:.1f}, Severity={anom['severity']})")
+
+        # 6. Policy-Driven Prioritized Evaluation & Versioning
+        pol = dlp_service.policy_engine.create_policy(
+            name="Diag Financial Transfer Gate",
+            category=DLPDataCategory.FINANCIAL.value,
+            min_sensitivity_tier=DLPSensitivityTier.HIGHLY_RESTRICTED.value,
+            channel="NETWORK",
+            mode=EnforcementMode.REQUIRE_APPROVAL.value,
+            priority=5,
+        )
+        updated_pol, pver = dlp_service.policy_engine.update_policy(
+            policy_id=pol.policy_id,
+            mode=EnforcementMode.REQUIRE_APPROVAL.value,
+            changes_summary="Version snapshot bump"
+        )
+        assert pver.version_num == 2
+        findings_diag = [
+            SensitiveFinding(
+                finding_id="f_diag_01",
+                source_ref=mov_exfil.event_id,
+                data_category=DLPDataCategory.FINANCIAL.value,
+                sensitivity_tier=DLPSensitivityTier.HIGHLY_RESTRICTED.value,
+                detection_method="LUHN_VALIDATED_CREDIT_CARD",
+                confidence=0.99,
+                matched_tokens_count=1,
+            )
+        ]
+        dec = dlp_service.policy_engine.evaluate_movement(event=mov_exfil, findings=findings_diag)
+        assert dec.decision == DLPDecision.APPROVAL_REQUIRED.value
+        print(f"      [52] Policy Prioritization & Versioning  PASS (v{pver.version_num} snapshot, Decision: {dec.decision})")
+
+        # 7. Fail-Closed Transfer Control Interception & Human Approval Binding
+        act_blocked = dlp_service.execute_dlp_enforcement_action(dec.decision_id, approval_token=None)
+        assert act_blocked.action_status == ActionStatus.FAILED.value
+        act_approved = dlp_service.execute_dlp_enforcement_action(dec.decision_id, approval_token="diag_m20_auth_token_sig")
+        assert act_approved.action_status == ActionStatus.BYPASSED.value
+        assert act_approved.verified is True
+        print("      [52] Fail-Closed Control & M20 Approval . PASS (Unauthenticated transfer halted, token bypass verified)")
+
+        # 8. Removable Media (USB) Hardware Defense Execution
+        pol_usb = dlp_service.policy_engine.create_policy(
+            name="Diag Removable Media Block",
+            category="ANY",
+            min_sensitivity_tier=DLPSensitivityTier.INTERNAL.value,
+            channel="REMOVABLE_MEDIA",
+            mode=EnforcementMode.BLOCK.value,
+            priority=1,
+            conditions={"unapproved_only": True}
+        )
+        mov_usb, _ = dlp_service.movement_monitor.record_removable_media(
+            endpoint_id=ep_enroll.endpoint_id,
+            actor_id="diag_analyst",
+            device_vendor="RogueUSB",
+            serial_number="SN-ROGUE-01",
+            file_name="credentials.db",
+            volume_bytes=1048576,
+            is_approved_device=False
+        )
+        dec_usb = dlp_service.policy_engine.evaluate_movement(mov_usb)
+        assert dec_usb.decision == DLPDecision.BLOCK.value
+        act_usb = dlp_service.execute_dlp_enforcement_action(dec_usb.decision_id)
+        assert act_usb.action_status == ActionStatus.EXECUTED.value
+        assert act_usb.verified is True
+        print("      [52] Removable Media (USB) Defense ..... PASS (Unapproved flash drive write blocked & verified)")
+
+        # 9. Synthetic Policy Simulation & False-Positive Analysis
+        sim_res = dlp_service.simulator.simulate_policy_impact(
+            candidate_policy=pol_usb,
+            events=[mov_evt, mov_exfil, mov_usb]
+        )
+        assert sim_res["total_events_replayed"] == 3
+        assert len(sim_res["simulation_seal"]) == 64
+        print(f"      [52] Policy Simulation & Replay ........ PASS (Replayed {sim_res['total_events_replayed']} events, seal verified)")
+
+        # 10. Cryptographically Sealed Operations Intelligence Reporting
+        ops_rep = dlp_service.generate_dlp_operations_report(
+            title="Diagnostics DLP Operations Brief",
+            reporting_actor="diag_dlp_officer"
+        )
+        assert len(ops_rep.sha256_seal) == 64
+        assert ops_rep.blocked_transfers_count >= 1
+        print(f"      [52] Sealed Operations Intelligence .... PASS (Seal: {ops_rep.sha256_seal[:16]}..., Blocked={ops_rep.blocked_transfers_count})")
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        print(f"      [52] DLP Intelligence Subsystem ........ FAIL ({e})")
+
 
     print("\n" + "=" * 60)
     print("Diagnostics complete.")

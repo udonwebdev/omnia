@@ -7,7 +7,7 @@ from typing import List, Tuple
 
 logger = logging.getLogger("Omnia.Persistence.Migrations")
 
-CURRENT_SCHEMA_VERSION = 35
+CURRENT_SCHEMA_VERSION = 36
 
 MIGRATION_V1 = """
 -- Schema Version 1: Durable Task Graph & Crash Recovery Tables
@@ -4816,6 +4816,246 @@ CREATE INDEX IF NOT EXISTS idx_priv_audit_event ON priv_audit_logs(event_type);
 CREATE INDEX IF NOT EXISTS idx_priv_audit_ts ON priv_audit_logs(timestamp);
 """
 
+MIGRATION_V36 = """
+-- Schema Version 36: Autonomous Data Loss Prevention, Sensitive Information Monitoring & Exfiltration Defense Intelligence
+
+-- 1. DLP Policies
+CREATE TABLE IF NOT EXISTS dlp_policies (
+    policy_id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    description TEXT,
+    category TEXT NOT NULL,
+    min_sensitivity_tier TEXT NOT NULL,
+    channel TEXT NOT NULL,
+    mode TEXT NOT NULL,
+    priority INTEGER NOT NULL DEFAULT 100,
+    is_active INTEGER NOT NULL DEFAULT 1,
+    created_at REAL NOT NULL,
+    updated_at REAL NOT NULL,
+    conditions_json TEXT DEFAULT '{}',
+    actions_json TEXT DEFAULT '[]'
+);
+CREATE INDEX IF NOT EXISTS idx_dlp_pol_cat ON dlp_policies(category);
+CREATE INDEX IF NOT EXISTS idx_dlp_pol_chan ON dlp_policies(channel);
+CREATE INDEX IF NOT EXISTS idx_dlp_pol_active ON dlp_policies(is_active);
+
+-- 2. DLP Policy Versions
+CREATE TABLE IF NOT EXISTS dlp_policy_versions (
+    version_id TEXT PRIMARY KEY,
+    policy_id TEXT NOT NULL,
+    version_num INTEGER NOT NULL,
+    changes_summary TEXT,
+    created_at REAL NOT NULL,
+    created_by TEXT NOT NULL,
+    snapshot_json TEXT NOT NULL,
+    FOREIGN KEY(policy_id) REFERENCES dlp_policies(policy_id)
+);
+CREATE INDEX IF NOT EXISTS idx_dlp_pver_pol ON dlp_policy_versions(policy_id);
+
+-- 3. Protected Content Fingerprints
+CREATE TABLE IF NOT EXISTS dlp_protected_fingerprints (
+    fingerprint_id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    data_category TEXT NOT NULL,
+    fingerprint_hash TEXT NOT NULL,
+    algorithm TEXT NOT NULL,
+    threshold REAL NOT NULL DEFAULT 0.8,
+    is_active INTEGER NOT NULL DEFAULT 1,
+    created_at REAL NOT NULL,
+    metadata_json TEXT DEFAULT '{}'
+);
+CREATE INDEX IF NOT EXISTS idx_dlp_fp_hash ON dlp_protected_fingerprints(fingerprint_hash);
+CREATE INDEX IF NOT EXISTS idx_dlp_fp_cat ON dlp_protected_fingerprints(data_category);
+
+-- 4. Sensitive Findings
+CREATE TABLE IF NOT EXISTS dlp_sensitive_findings (
+    finding_id TEXT PRIMARY KEY,
+    source_ref TEXT NOT NULL,
+    data_category TEXT NOT NULL,
+    sensitivity_tier TEXT NOT NULL,
+    detection_method TEXT NOT NULL,
+    confidence REAL NOT NULL,
+    matched_tokens_count INTEGER NOT NULL,
+    detected_at REAL NOT NULL,
+    metadata_json TEXT DEFAULT '{}'
+);
+CREATE INDEX IF NOT EXISTS idx_dlp_find_src ON dlp_sensitive_findings(source_ref);
+CREATE INDEX IF NOT EXISTS idx_dlp_find_cat ON dlp_sensitive_findings(data_category);
+CREATE INDEX IF NOT EXISTS idx_dlp_find_tier ON dlp_sensitive_findings(sensitivity_tier);
+
+-- 5. Data Movement Events
+CREATE TABLE IF NOT EXISTS dlp_movement_events (
+    event_id TEXT PRIMARY KEY,
+    actor_id TEXT NOT NULL,
+    device_id TEXT NOT NULL,
+    source_location TEXT NOT NULL,
+    destination_location TEXT NOT NULL,
+    channel TEXT NOT NULL,
+    volume_bytes INTEGER NOT NULL,
+    timestamp REAL NOT NULL,
+    is_authorized INTEGER NOT NULL DEFAULT 1,
+    metadata_json TEXT DEFAULT '{}'
+);
+CREATE INDEX IF NOT EXISTS idx_dlp_mov_actor ON dlp_movement_events(actor_id);
+CREATE INDEX IF NOT EXISTS idx_dlp_mov_chan ON dlp_movement_events(channel);
+CREATE INDEX IF NOT EXISTS idx_dlp_mov_ts ON dlp_movement_events(timestamp);
+
+-- 6. Transfer Decisions
+CREATE TABLE IF NOT EXISTS dlp_transfer_decisions (
+    decision_id TEXT PRIMARY KEY,
+    event_id TEXT NOT NULL,
+    policy_id TEXT,
+    decision TEXT NOT NULL,
+    reason TEXT NOT NULL,
+    evaluated_at REAL NOT NULL,
+    FOREIGN KEY(event_id) REFERENCES dlp_movement_events(event_id)
+);
+CREATE INDEX IF NOT EXISTS idx_dlp_dec_evt ON dlp_transfer_decisions(event_id);
+CREATE INDEX IF NOT EXISTS idx_dlp_dec_pol ON dlp_transfer_decisions(policy_id);
+
+-- 7. Enforcement Actions
+CREATE TABLE IF NOT EXISTS dlp_enforcement_actions (
+    action_id TEXT PRIMARY KEY,
+    decision_id TEXT NOT NULL,
+    event_id TEXT NOT NULL,
+    adapter_type TEXT NOT NULL,
+    action_status TEXT NOT NULL,
+    execution_result TEXT,
+    verified INTEGER NOT NULL DEFAULT 0,
+    timestamp REAL NOT NULL,
+    FOREIGN KEY(decision_id) REFERENCES dlp_transfer_decisions(decision_id),
+    FOREIGN KEY(event_id) REFERENCES dlp_movement_events(event_id)
+);
+CREATE INDEX IF NOT EXISTS idx_dlp_enf_dec ON dlp_enforcement_actions(decision_id);
+CREATE INDEX IF NOT EXISTS idx_dlp_enf_status ON dlp_enforcement_actions(action_status);
+
+-- 8. Endpoint Enrollments
+CREATE TABLE IF NOT EXISTS dlp_endpoint_enrollments (
+    endpoint_id TEXT PRIMARY KEY,
+    hostname TEXT NOT NULL,
+    os_type TEXT NOT NULL,
+    agent_version TEXT NOT NULL,
+    status TEXT NOT NULL,
+    enrolled_at REAL NOT NULL,
+    last_heartbeat REAL NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_dlp_ep_status ON dlp_endpoint_enrollments(status);
+
+-- 9. Endpoint Telemetry
+CREATE TABLE IF NOT EXISTS dlp_endpoint_telemetry (
+    telemetry_id TEXT PRIMARY KEY,
+    endpoint_id TEXT NOT NULL,
+    operation_type TEXT NOT NULL,
+    file_path TEXT,
+    process_name TEXT,
+    volume_bytes INTEGER NOT NULL,
+    timestamp REAL NOT NULL,
+    FOREIGN KEY(endpoint_id) REFERENCES dlp_endpoint_enrollments(endpoint_id)
+);
+CREATE INDEX IF NOT EXISTS idx_dlp_eptel_ep ON dlp_endpoint_telemetry(endpoint_id);
+CREATE INDEX IF NOT EXISTS idx_dlp_eptel_ts ON dlp_endpoint_telemetry(timestamp);
+
+-- 10. Network Telemetry
+CREATE TABLE IF NOT EXISTS dlp_network_telemetry (
+    net_telemetry_id TEXT PRIMARY KEY,
+    source_ip TEXT NOT NULL,
+    dest_ip TEXT NOT NULL,
+    dest_domain TEXT,
+    protocol TEXT NOT NULL,
+    bytes_out INTEGER NOT NULL,
+    bytes_in INTEGER NOT NULL,
+    is_encrypted INTEGER NOT NULL DEFAULT 1,
+    timestamp REAL NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_dlp_net_dest ON dlp_network_telemetry(dest_domain);
+CREATE INDEX IF NOT EXISTS idx_dlp_net_ts ON dlp_network_telemetry(timestamp);
+
+-- 11. Cloud Events
+CREATE TABLE IF NOT EXISTS dlp_cloud_events (
+    cloud_event_id TEXT PRIMARY KEY,
+    service_name TEXT NOT NULL,
+    storage_target TEXT NOT NULL,
+    action_type TEXT NOT NULL,
+    external_recipients_json TEXT DEFAULT '[]',
+    volume_bytes INTEGER NOT NULL,
+    timestamp REAL NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_dlp_cloud_svc ON dlp_cloud_events(service_name);
+CREATE INDEX IF NOT EXISTS idx_dlp_cloud_act ON dlp_cloud_events(action_type);
+
+-- 12. Communication Events
+CREATE TABLE IF NOT EXISTS dlp_communication_events (
+    comm_event_id TEXT PRIMARY KEY,
+    app_name TEXT NOT NULL,
+    sender TEXT NOT NULL,
+    recipients_json TEXT DEFAULT '[]',
+    attachments_json TEXT DEFAULT '[]',
+    has_external_recipient INTEGER NOT NULL DEFAULT 0,
+    timestamp REAL NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_dlp_comm_app ON dlp_communication_events(app_name);
+CREATE INDEX IF NOT EXISTS idx_dlp_comm_sender ON dlp_communication_events(sender);
+
+-- 13. Removable Media Events
+CREATE TABLE IF NOT EXISTS dlp_removable_media_events (
+    media_event_id TEXT PRIMARY KEY,
+    endpoint_id TEXT NOT NULL,
+    device_vendor TEXT NOT NULL,
+    serial_number TEXT NOT NULL,
+    file_name TEXT NOT NULL,
+    volume_bytes INTEGER NOT NULL,
+    is_approved_device INTEGER NOT NULL DEFAULT 0,
+    timestamp REAL NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_dlp_media_ep ON dlp_removable_media_events(endpoint_id);
+CREATE INDEX IF NOT EXISTS idx_dlp_media_sn ON dlp_removable_media_events(serial_number);
+
+-- 14. Exfiltration Alerts
+CREATE TABLE IF NOT EXISTS dlp_exfiltration_alerts (
+    alert_id TEXT PRIMARY KEY,
+    title TEXT NOT NULL,
+    severity TEXT NOT NULL,
+    risk_score REAL NOT NULL,
+    confidence REAL NOT NULL,
+    anomaly_indicators_json TEXT DEFAULT '[]',
+    actor_id TEXT NOT NULL,
+    destination TEXT NOT NULL,
+    status TEXT NOT NULL,
+    timestamp REAL NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_dlp_alert_sev ON dlp_exfiltration_alerts(severity);
+CREATE INDEX IF NOT EXISTS idx_dlp_alert_actor ON dlp_exfiltration_alerts(actor_id);
+CREATE INDEX IF NOT EXISTS idx_dlp_alert_status ON dlp_exfiltration_alerts(status);
+
+-- 15. DLP Incidents
+CREATE TABLE IF NOT EXISTS dlp_incidents (
+    incident_id TEXT PRIMARY KEY,
+    title TEXT NOT NULL,
+    severity TEXT NOT NULL,
+    containment_status TEXT NOT NULL,
+    affected_assets_json TEXT DEFAULT '[]',
+    evidence_package_json TEXT DEFAULT '{}',
+    created_at REAL NOT NULL,
+    updated_at REAL NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_dlp_inc_sev ON dlp_incidents(severity);
+CREATE INDEX IF NOT EXISTS idx_dlp_inc_status ON dlp_incidents(containment_status);
+
+-- 16. DLP Operations Reports
+CREATE TABLE IF NOT EXISTS dlp_reports (
+    report_id TEXT PRIMARY KEY,
+    title TEXT NOT NULL,
+    findings_count INTEGER NOT NULL,
+    blocked_transfers_count INTEGER NOT NULL,
+    active_alerts_count INTEGER NOT NULL,
+    sha256_seal TEXT NOT NULL,
+    generated_at REAL NOT NULL,
+    report_json TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_dlp_rep_seal ON dlp_reports(sha256_seal);
+"""
+
+
 def apply_migrations(db_path: str) -> int:
     """Applies ordered, transactional migrations to ensure schema freshness without data destruction."""
     os.makedirs(os.path.dirname(os.path.abspath(db_path)), exist_ok=True)
@@ -5226,6 +5466,17 @@ def apply_migrations(db_path: str) -> int:
             conn.commit()
             logger.info("Migration v35 applied successfully.")
             current_version = 35
+
+        if current_version < 36:
+            logger.info("Applying Migration v36 (Autonomous Data Loss Prevention, Sensitive Information Monitoring & Exfiltration Defense Intelligence Tables)...")
+            cursor.executescript(MIGRATION_V36)
+            cursor.execute(
+                "INSERT INTO schema_migrations (version, applied_at, description) VALUES (?, ?, ?)",
+                (36, time.time(), "Autonomous Data Loss Prevention, Sensitive Information Monitoring & Exfiltration Defense Intelligence tables")
+            )
+            conn.commit()
+            logger.info("Migration v36 applied successfully.")
+            current_version = 36
 
         return current_version
     except Exception as e:
