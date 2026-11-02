@@ -7,7 +7,7 @@ from typing import List, Tuple
 
 logger = logging.getLogger("Omnia.Persistence.Migrations")
 
-CURRENT_SCHEMA_VERSION = 34
+CURRENT_SCHEMA_VERSION = 35
 
 MIGRATION_V1 = """
 -- Schema Version 1: Durable Task Graph & Crash Recovery Tables
@@ -4580,6 +4580,242 @@ CREATE INDEX IF NOT EXISTS idx_mal_reports_sample ON mal_reports(sample_id);
 CREATE INDEX IF NOT EXISTS idx_mal_reports_verdict ON mal_reports(verdict);
 """
 
+
+MIGRATION_V35 = """
+-- Schema Version 35: Autonomous Privacy Engineering, Data Governance & Information Protection Intelligence Tables
+
+-- 1. Data Asset Inventory
+CREATE TABLE IF NOT EXISTS priv_data_assets (
+    asset_id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    asset_type TEXT NOT NULL,
+    storage_location TEXT NOT NULL,
+    owner TEXT NOT NULL,
+    residency_country TEXT NOT NULL,
+    sensitivity_tier TEXT NOT NULL,
+    is_active INTEGER DEFAULT 1,
+    created_at REAL NOT NULL,
+    updated_at REAL NOT NULL,
+    metadata_json TEXT DEFAULT '{}'
+);
+CREATE INDEX IF NOT EXISTS idx_priv_assets_type ON priv_data_assets(asset_type);
+CREATE INDEX IF NOT EXISTS idx_priv_assets_residency ON priv_data_assets(residency_country);
+CREATE INDEX IF NOT EXISTS idx_priv_assets_tier ON priv_data_assets(sensitivity_tier);
+
+-- 2. Sensitive Data Classifications
+CREATE TABLE IF NOT EXISTS priv_data_classifications (
+    class_id TEXT PRIMARY KEY,
+    asset_id TEXT NOT NULL,
+    field_name TEXT NOT NULL,
+    category TEXT NOT NULL,
+    sensitivity_tier TEXT NOT NULL,
+    confidence REAL NOT NULL,
+    rule_matched TEXT NOT NULL,
+    classified_at REAL NOT NULL,
+    FOREIGN KEY(asset_id) REFERENCES priv_data_assets(asset_id)
+);
+CREATE INDEX IF NOT EXISTS idx_priv_class_asset ON priv_data_classifications(asset_id);
+CREATE INDEX IF NOT EXISTS idx_priv_class_category ON priv_data_classifications(category);
+CREATE INDEX IF NOT EXISTS idx_priv_class_tier ON priv_data_classifications(sensitivity_tier);
+
+-- 3. Sensitive Data Discovery Scans
+CREATE TABLE IF NOT EXISTS priv_discovery_scans (
+    scan_id TEXT PRIMARY KEY,
+    target_scope TEXT NOT NULL,
+    scanner_identity TEXT NOT NULL,
+    findings_count INTEGER DEFAULT 0,
+    sensitive_fields_json TEXT DEFAULT '[]',
+    started_at REAL NOT NULL,
+    completed_at REAL,
+    status TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_priv_scans_status ON priv_discovery_scans(status);
+CREATE INDEX IF NOT EXISTS idx_priv_scans_started ON priv_discovery_scans(started_at);
+
+-- 4. Data Lineage Records
+CREATE TABLE IF NOT EXISTS priv_lineage_records (
+    lineage_id TEXT PRIMARY KEY,
+    source_asset_id TEXT NOT NULL,
+    dest_asset_id TEXT NOT NULL,
+    operation_type TEXT NOT NULL,
+    purpose TEXT NOT NULL,
+    transformation_type TEXT NOT NULL,
+    actor TEXT NOT NULL,
+    timestamp REAL NOT NULL,
+    FOREIGN KEY(source_asset_id) REFERENCES priv_data_assets(asset_id),
+    FOREIGN KEY(dest_asset_id) REFERENCES priv_data_assets(asset_id)
+);
+CREATE INDEX IF NOT EXISTS idx_priv_lineage_src ON priv_lineage_records(source_asset_id);
+CREATE INDEX IF NOT EXISTS idx_priv_lineage_dest ON priv_lineage_records(dest_asset_id);
+
+-- 5. Processing Activities (RoPA)
+CREATE TABLE IF NOT EXISTS priv_processing_activities (
+    activity_id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    purpose TEXT NOT NULL,
+    lawful_basis TEXT NOT NULL,
+    owner TEXT NOT NULL,
+    data_categories_json TEXT DEFAULT '[]',
+    retention_schedule TEXT NOT NULL,
+    is_approved INTEGER DEFAULT 0,
+    review_date REAL NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_priv_proc_purpose ON priv_processing_activities(purpose);
+CREATE INDEX IF NOT EXISTS idx_priv_proc_approved ON priv_processing_activities(is_approved);
+
+-- 6. Consent Records
+CREATE TABLE IF NOT EXISTS priv_consent_records (
+    consent_id TEXT PRIMARY KEY,
+    subject_id TEXT NOT NULL,
+    purpose TEXT NOT NULL,
+    status TEXT NOT NULL,
+    granted_at REAL NOT NULL,
+    withdrawn_at REAL,
+    policy_version TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_priv_consent_sub_purp ON priv_consent_records(subject_id, purpose);
+CREATE INDEX IF NOT EXISTS idx_priv_consent_status ON priv_consent_records(status);
+
+-- 7. Retention Policies
+CREATE TABLE IF NOT EXISTS priv_retention_policies (
+    policy_id TEXT PRIMARY KEY,
+    purpose TEXT NOT NULL,
+    max_retention_days INTEGER NOT NULL,
+    legal_basis TEXT NOT NULL,
+    legal_hold_exempt INTEGER DEFAULT 0,
+    created_at REAL NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_priv_retention_purpose ON priv_retention_policies(purpose);
+
+-- 8. Deletion Requests & Multi-Store Orchestration
+CREATE TABLE IF NOT EXISTS priv_deletion_requests (
+    request_id TEXT PRIMARY KEY,
+    asset_id TEXT NOT NULL,
+    target_selector TEXT NOT NULL,
+    reason TEXT NOT NULL,
+    requested_by TEXT NOT NULL,
+    approval_token TEXT,
+    status TEXT NOT NULL,
+    verified INTEGER DEFAULT 0,
+    requested_at REAL NOT NULL,
+    completed_at REAL,
+    FOREIGN KEY(asset_id) REFERENCES priv_data_assets(asset_id)
+);
+CREATE INDEX IF NOT EXISTS idx_priv_del_asset ON priv_deletion_requests(asset_id);
+CREATE INDEX IF NOT EXISTS idx_priv_del_status ON priv_deletion_requests(status);
+
+-- 9. Data Subject Requests (DSR/DSAR)
+CREATE TABLE IF NOT EXISTS priv_dsr_requests (
+    dsr_id TEXT PRIMARY KEY,
+    subject_id TEXT NOT NULL,
+    request_type TEXT NOT NULL,
+    status TEXT NOT NULL,
+    verification_token TEXT,
+    requester_email TEXT NOT NULL,
+    deadline REAL NOT NULL,
+    created_at REAL NOT NULL,
+    resolved_at REAL
+);
+CREATE INDEX IF NOT EXISTS idx_priv_dsr_subject ON priv_dsr_requests(subject_id);
+CREATE INDEX IF NOT EXISTS idx_priv_dsr_status ON priv_dsr_requests(status);
+CREATE INDEX IF NOT EXISTS idx_priv_dsr_type ON priv_dsr_requests(request_type);
+
+-- 10. Privacy Impact Assessments (PIA/DPIA)
+CREATE TABLE IF NOT EXISTS priv_assessments (
+    assessment_id TEXT PRIMARY KEY,
+    activity_id TEXT NOT NULL,
+    assessment_type TEXT NOT NULL,
+    risk_score REAL NOT NULL,
+    findings_json TEXT DEFAULT '[]',
+    safeguards_json TEXT DEFAULT '[]',
+    approval_status TEXT NOT NULL,
+    assessed_at REAL NOT NULL,
+    FOREIGN KEY(activity_id) REFERENCES priv_processing_activities(activity_id)
+);
+CREATE INDEX IF NOT EXISTS idx_priv_assess_act ON priv_assessments(activity_id);
+CREATE INDEX IF NOT EXISTS idx_priv_assess_status ON priv_assessments(approval_status);
+
+-- 11. Access & Disclosure Governance
+CREATE TABLE IF NOT EXISTS priv_access_disclosures (
+    log_id TEXT PRIMARY KEY,
+    actor_id TEXT NOT NULL,
+    asset_id TEXT NOT NULL,
+    purpose TEXT NOT NULL,
+    action TEXT NOT NULL,
+    authorized INTEGER NOT NULL,
+    justification TEXT,
+    timestamp REAL NOT NULL,
+    FOREIGN KEY(asset_id) REFERENCES priv_data_assets(asset_id)
+);
+CREATE INDEX IF NOT EXISTS idx_priv_access_actor ON priv_access_disclosures(actor_id);
+CREATE INDEX IF NOT EXISTS idx_priv_access_asset ON priv_access_disclosures(asset_id);
+CREATE INDEX IF NOT EXISTS idx_priv_access_auth ON priv_access_disclosures(authorized);
+
+-- 12. Vendor & Processor Governance
+CREATE TABLE IF NOT EXISTS priv_vendor_processors (
+    vendor_id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    service_type TEXT NOT NULL,
+    dpa_status TEXT NOT NULL,
+    residency TEXT NOT NULL,
+    subprocessors_json TEXT DEFAULT '[]',
+    assessment_status TEXT NOT NULL,
+    updated_at REAL NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_priv_vendor_dpa ON priv_vendor_processors(dpa_status);
+
+-- 13. Cross-Border Data Transfers
+CREATE TABLE IF NOT EXISTS priv_cross_border_transfers (
+    transfer_id TEXT PRIMARY KEY,
+    source_country TEXT NOT NULL,
+    dest_country TEXT NOT NULL,
+    recipient TEXT NOT NULL,
+    purpose TEXT NOT NULL,
+    transfer_mechanism TEXT NOT NULL,
+    is_approved INTEGER DEFAULT 0,
+    reviewed_at REAL NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_priv_cbt_dest ON priv_cross_border_transfers(dest_country);
+CREATE INDEX IF NOT EXISTS idx_priv_cbt_approved ON priv_cross_border_transfers(is_approved);
+
+-- 14. Privacy Incidents
+CREATE TABLE IF NOT EXISTS priv_incidents (
+    incident_id TEXT PRIMARY KEY,
+    incident_type TEXT NOT NULL,
+    affected_assets_json TEXT DEFAULT '[]',
+    affected_categories_json TEXT DEFAULT '[]',
+    severity TEXT NOT NULL,
+    containment_status TEXT NOT NULL,
+    reportable INTEGER DEFAULT 0,
+    created_at REAL NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_priv_inc_severity ON priv_incidents(severity);
+CREATE INDEX IF NOT EXISTS idx_priv_inc_status ON priv_incidents(containment_status);
+
+-- 15. AI & Model Privacy Governance
+CREATE TABLE IF NOT EXISTS priv_ai_governance (
+    ai_gov_id TEXT PRIMARY KEY,
+    model_id TEXT NOT NULL,
+    provider TEXT NOT NULL,
+    inference_logging_allowed INTEGER DEFAULT 0,
+    training_permitted INTEGER DEFAULT 0,
+    prompt_redaction_enabled INTEGER DEFAULT 1,
+    retention_policy TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_priv_ai_model ON priv_ai_governance(model_id);
+
+-- 16. Privacy Audit Logs
+CREATE TABLE IF NOT EXISTS priv_audit_logs (
+    audit_id TEXT PRIMARY KEY,
+    event_type TEXT NOT NULL,
+    actor TEXT NOT NULL,
+    details_json TEXT DEFAULT '{}',
+    timestamp REAL NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_priv_audit_event ON priv_audit_logs(event_type);
+CREATE INDEX IF NOT EXISTS idx_priv_audit_ts ON priv_audit_logs(timestamp);
+"""
+
 def apply_migrations(db_path: str) -> int:
     """Applies ordered, transactional migrations to ensure schema freshness without data destruction."""
     os.makedirs(os.path.dirname(os.path.abspath(db_path)), exist_ok=True)
@@ -4978,6 +5214,18 @@ def apply_migrations(db_path: str) -> int:
             conn.commit()
             logger.info("Migration v34 applied successfully.")
             current_version = 34
+
+
+        if current_version < 35:
+            logger.info("Applying Migration v35 (Autonomous Privacy Engineering, Data Governance & Information Protection Intelligence Tables)...")
+            cursor.executescript(MIGRATION_V35)
+            cursor.execute(
+                "INSERT INTO schema_migrations (version, applied_at, description) VALUES (?, ?, ?)",
+                (35, time.time(), "Autonomous Privacy Engineering, Data Governance & Information Protection Intelligence tables")
+            )
+            conn.commit()
+            logger.info("Migration v35 applied successfully.")
+            current_version = 35
 
         return current_version
     except Exception as e:

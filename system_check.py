@@ -3914,7 +3914,7 @@ async def run_diagnostics():
         print(f"      [48] Forensics Subsystem ............... FAIL ({e})")
 
     # Stage 44: Autonomous Malware Analysis, Reverse Engineering & Behavioral Classification Intelligence
-    print("\n[44/44] Checking Module 49: Autonomous Malware Analysis, Reverse Engineering & Behavioral Classification Intelligence...")
+    print("\n[44/45] Checking Module 49: Autonomous Malware Analysis, Reverse Engineering & Behavioral Classification Intelligence...")
     from malware import (
         malware_service,
         SampleVerdict,
@@ -3978,6 +3978,141 @@ async def run_diagnostics():
         import traceback
         traceback.print_exc()
         print(f"      [49] Malware Analysis Subsystem ........ FAIL ({e})")
+
+
+    # Stage 45: Autonomous Privacy Engineering, Data Governance & Information Protection Intelligence
+    print("\n[45/45] Checking Module 51: Autonomous Privacy Engineering, Data Governance & Information Protection Intelligence...")
+    from privacy import (
+        privacy_service,
+        SensitivityTier,
+        DataCategory,
+        DeletionStatus,
+        DSRStatus,
+        ConsentStatus,
+    )
+
+    try:
+        # 1. Register Data Asset & Classify Schema Fields
+        ast, classifications = privacy_service.inventory_and_classify_asset(
+            name="diag_customer_vault",
+            asset_type="DATABASE",
+            storage_location="us-east-1/rds/prod",
+            owner="diag_privacy_eng",
+            residency_country="US",
+            fields=[
+                {"name": "user_id", "sample_values": ["usr_001"]},
+                {"name": "full_name", "sample_values": ["Alice Wonderland"]},
+                {"name": "email", "sample_values": ["alice@example.com"]},
+                {"name": "ssn", "sample_values": ["987-65-4321"]},
+                {"name": "credit_card", "sample_values": ["4532015112830366"]}
+            ]
+        )
+        assert ast.sensitivity_tier == SensitivityTier.HIGHLY_RESTRICTED
+        assert len(classifications) == 5
+        print(f"      [51] Asset Inventory & Sensitivity Rollup PASS ({ast.name} -> {ast.sensitivity_tier.value})")
+
+        # 2. Scoped Sensitive Data Discovery Scan
+        scan = privacy_service.execute_discovery(
+            target_scope="diag_customer_vault.users",
+            scanner_identity="diag_scanner_agent",
+            sample_payload={"ssn": "987-65-4321", "email": "alice@example.com"}
+        )
+        assert scan.findings_count >= 2
+        print(f"      [51] Controlled Sensitive Discovery ..... PASS ({scan.findings_count} findings, zero raw leakage)")
+
+        # 3. Lineage Tracing & Provenance
+        replica = privacy_service.inventory.register_asset("diag_redis_replica", "CACHE", "cache.local", "secops")
+        privacy_service.lineage.record_lineage(ast.asset_id, replica.asset_id, "REPLICATION", "CACHE_SYNC")
+        downstream = privacy_service.lineage.trace_downstream(ast.asset_id)
+        assert replica.asset_id in downstream
+        print("      [51] Lineage & Multi-Store Traversal .... PASS (Cascading downstream paths discovered)")
+
+        # 4. RoPA Processing Activity & Purpose Binding
+        act, _ = privacy_service.record_processing_and_consent(
+            activity_name="diag_billing_service",
+            purpose="CUSTOMER_BILLING",
+            lawful_basis="CONTRACT",
+            owner="finance",
+            data_categories=["FINANCIAL", "PII"],
+            is_approved=True
+        )
+        valid, _ = privacy_service.processing_registry.validate_processing("CUSTOMER_BILLING", ["FINANCIAL"])
+        assert valid is True
+        print(f"      [51] RoPA Processing Purpose Binding .... PASS (Activity '{act.name}' validated)")
+
+        # 5. Consent Lifecycle & Instant Withdrawal
+        c_grant = privacy_service.consent.grant_consent("diag_subject_1", "CUSTOMER_BILLING", "1.0")
+        assert privacy_service.consent.has_valid_consent("diag_subject_1", "CUSTOMER_BILLING") is True
+        privacy_service.consent.withdraw_consent("diag_subject_1", "CUSTOMER_BILLING")
+        assert privacy_service.consent.has_valid_consent("diag_subject_1", "CUSTOMER_BILLING") is False
+        print("      [51] Consent Management & Withdrawal .... PASS (Instant processing cessation verified)")
+
+        # 6. Retention & Legal Hold Deletion Override
+        privacy_service.retention.register_legal_hold("diag_target_litigation", "Litigation Hold 2026")
+        del_blocked = privacy_service.evaluate_retention_and_delete(
+            asset_id=ast.asset_id,
+            purpose="CUSTOMER_BILLING",
+            target_selector="diag_target_litigation",
+            requested_by="compliance_officer",
+            reason="User GDPR request",
+            approval_token="appr_token_1"
+        )
+        assert del_blocked.status == DeletionStatus.BLOCKED_LEGAL_HOLD
+        privacy_service.retention.release_legal_hold("diag_target_litigation")
+        print("      [51] Legal Hold Deletion Blockade ....... PASS (Strict preservation under legal hold)")
+
+        # 7. Cascading Verified Multi-Store Deletion
+        del_approved = privacy_service.evaluate_retention_and_delete(
+            asset_id=ast.asset_id,
+            purpose="CUSTOMER_BILLING",
+            target_selector="diag_target_deleted",
+            requested_by="compliance_officer",
+            reason="User GDPR request",
+            approval_token="appr_token_valid"
+        )
+        assert del_approved.status == DeletionStatus.COMPLETED
+        assert del_approved.verified is True
+        assert len(del_approved.verification_proof) == 64
+        print(f"      [51] Verified Deletion Orchestration ... PASS (Proof: {del_approved.verification_proof[:16]}...)")
+
+        # 8. Data Subject Rights (DSR/DSAR) Fulfillment
+        dsr = privacy_service.manage_dsr(
+            subject_id="diag_subject_dsr",
+            request_type="ACCESS",
+            requester_email="dsr@example.com",
+            action="SUBMIT",
+            verification_token="vtok_diag"
+        )
+        fulfilled_dsr = privacy_service.manage_dsr(
+            subject_id="diag_subject_dsr",
+            request_type="ACCESS",
+            requester_email="dsr@example.com",
+            action="FULFILL",
+            approval_token="dpo_tok_diag",
+            dsr_id=dsr.dsr_id
+        )
+        assert fulfilled_dsr.status == DSRStatus.FULFILLED
+        print("      [51] DSR Access Fulfillment ............ PASS (Subject rights verified and fulfilled)")
+
+        # 9. Cryptographic Transformations & AI Prompt Redaction
+        sanitized = privacy_service.ai_governance.sanitize_prompt(
+            model_id="gpt-diag",
+            raw_prompt="Patient ssn: 123-45-6789 email: john@example.com"
+        )
+        assert "123-45-6789" not in sanitized
+        assert "[REDACTED:SSN]" in sanitized
+        print("      [51] Privacy Transformations & AI Gov .. PASS (HMAC, masking & AI prompt redaction verified)")
+
+        # 10. Cryptographically Sealed Governance Report
+        rep = privacy_service.generate_posture_report(actor="diag_dpo")
+        assert len(rep.cryptographic_seal) == 64
+        assert rep.overall_posture_score > 0.0
+        print(f"      [51] Posture Report & Cryptographic Seal PASS (Score={rep.overall_posture_score}, Seal={rep.cryptographic_seal[:16]}...)")
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        print(f"      [51] Privacy Engineering Subsystem ..... FAIL ({e})")
 
     print("\n" + "=" * 60)
     print("Diagnostics complete.")

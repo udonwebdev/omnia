@@ -7428,6 +7428,234 @@ def generate_malware_intelligence_report(
         return json.dumps({"success": False, "error": str(e)}, indent=2)
 
 
+
+# --- Module 51: Autonomous Privacy Engineering, Data Governance & Information Protection Tools ---
+
+@tool
+def inventory_and_classify_data_asset(
+    name: str,
+    asset_type: str = "TABLE",
+    storage_location: str = "db.production.main",
+    owner: str = "data_engineering",
+    residency_country: str = "US",
+    fields_json: Optional[str] = None,
+    metadata_json: Optional[str] = None
+) -> str:
+    """Registers and classifies data asset fields with sensitivity tiers and confidence."""
+    from privacy.service import privacy_service
+    import json
+    try:
+        fields = json.loads(fields_json) if fields_json else None
+        meta = json.loads(metadata_json) if metadata_json else None
+        asset, classifications = privacy_service.inventory_and_classify_asset(
+            name=name,
+            asset_type=asset_type,
+            storage_location=storage_location,
+            owner=owner,
+            residency_country=residency_country,
+            fields=fields,
+            metadata=meta
+        )
+        return json.dumps({
+            "success": True,
+            "asset_id": asset.asset_id,
+            "name": asset.name,
+            "asset_type": asset.asset_type.value,
+            "residency_country": asset.residency_country,
+            "overall_sensitivity_tier": asset.sensitivity_tier.value,
+            "classified_fields_count": len(classifications),
+            "classifications": [
+                {
+                    "field_name": c.field_name,
+                    "category": c.category.value,
+                    "sensitivity_tier": c.sensitivity_tier.value,
+                    "confidence": c.confidence,
+                    "rule_matched": c.rule_matched
+                }
+                for c in classifications
+            ]
+        }, indent=2)
+    except Exception as e:
+        return json.dumps({"success": False, "error": str(e)}, indent=2)
+
+
+@tool
+def execute_sensitive_data_discovery(
+    target_scope: str,
+    scanner_identity: str = "omnia_privacy_scanner",
+    field_names_json: Optional[str] = None,
+    sample_payload_json: Optional[str] = None
+) -> str:
+    """Runs authorized, scoped sensitive data discovery without storing raw sensitive data and returns findings."""
+    from privacy.service import privacy_service
+    import json
+    try:
+        field_names = json.loads(field_names_json) if field_names_json else None
+        sample_payload = json.loads(sample_payload_json) if sample_payload_json else None
+        scan = privacy_service.execute_discovery(
+            target_scope=target_scope,
+            scanner_identity=scanner_identity,
+            field_names=field_names,
+            sample_payload=sample_payload
+        )
+        return json.dumps({
+            "success": True,
+            "scan_id": scan.scan_id,
+            "target_scope": scan.target_scope,
+            "status": scan.status,
+            "findings_count": scan.findings_count,
+            "findings": scan.sensitive_fields
+        }, indent=2)
+    except Exception as e:
+        return json.dumps({"success": False, "error": str(e)}, indent=2)
+
+
+@tool
+def record_data_processing_and_consent(
+    activity_name: str,
+    purpose: str,
+    lawful_basis: str,
+    owner: str,
+    data_categories_json: str,
+    retention_schedule: str = "P3Y",
+    subject_id: Optional[str] = None,
+    consent_status: Optional[str] = None,
+    policy_version: str = "1.0"
+) -> str:
+    """Manages processing activity in the RoPA registry and records data subject consent grants or withdrawals."""
+    from privacy.service import privacy_service
+    import json
+    try:
+        categories = json.loads(data_categories_json) if isinstance(data_categories_json, str) else data_categories_json
+        act, consent = privacy_service.record_processing_and_consent(
+            activity_name=activity_name,
+            purpose=purpose,
+            lawful_basis=lawful_basis,
+            owner=owner,
+            data_categories=categories,
+            retention_schedule=retention_schedule,
+            subject_id=subject_id,
+            consent_status=consent_status,
+            policy_version=policy_version
+        )
+        res = {
+            "success": True,
+            "activity_id": act.activity_id,
+            "name": act.name,
+            "purpose": act.purpose,
+            "lawful_basis": act.lawful_basis.value,
+            "approved": act.is_approved
+        }
+        if consent:
+            res["consent"] = {
+                "consent_id": consent.consent_id,
+                "subject_id": consent.subject_id,
+                "purpose": consent.purpose,
+                "status": consent.status.value,
+                "policy_version": consent.policy_version
+            }
+        return json.dumps(res, indent=2)
+    except Exception as e:
+        return json.dumps({"success": False, "error": str(e)}, indent=2)
+
+
+@tool
+def evaluate_retention_and_orchestrate_deletion(
+    asset_id: str,
+    purpose: str,
+    target_selector: str,
+    requested_by: str,
+    reason: str,
+    approval_token: Optional[str] = None
+) -> str:
+    """Evaluates retention policies, checks legal holds, and executes verified deletions across primary and replica destinations."""
+    from privacy.service import privacy_service
+    import json
+    try:
+        del_req = privacy_service.evaluate_retention_and_delete(
+            asset_id=asset_id,
+            purpose=purpose,
+            target_selector=target_selector,
+            requested_by=requested_by,
+            reason=reason,
+            approval_token=approval_token
+        )
+        return json.dumps({
+            "success": del_req.status.value not in ("FAILED", "BLOCKED_LEGAL_HOLD"),
+            "request_id": del_req.request_id,
+            "asset_id": del_req.asset_id,
+            "target_selector": del_req.target_selector,
+            "status": del_req.status.value,
+            "verified": del_req.verified,
+            "verification_proof": del_req.verification_proof,
+            "reason": del_req.reason
+        }, indent=2)
+    except Exception as e:
+        return json.dumps({"success": False, "error": str(e)}, indent=2)
+
+
+@tool
+def manage_data_subject_request(
+    subject_id: str,
+    request_type: str,
+    requester_email: str,
+    action: str = "SUBMIT",
+    verification_token: Optional[str] = None,
+    approval_token: Optional[str] = None,
+    dsr_id: Optional[str] = None
+) -> str:
+    """Processes and updates DSR requests (Access/Deletion/Correction/Portability/Restriction) through verification and fulfillment."""
+    from privacy.service import privacy_service
+    import json
+    try:
+        dsr = privacy_service.manage_dsr(
+            subject_id=subject_id,
+            request_type=request_type,
+            requester_email=requester_email,
+            action=action,
+            verification_token=verification_token,
+            approval_token=approval_token,
+            dsr_id=dsr_id
+        )
+        return json.dumps({
+            "success": True,
+            "dsr_id": dsr.dsr_id,
+            "subject_id": dsr.subject_id,
+            "request_type": dsr.request_type.value,
+            "status": dsr.status.value,
+            "verification_token": dsr.verification_token,
+            "result_summary": dsr.result_summary,
+            "resolved_at": dsr.resolved_at
+        }, indent=2)
+    except Exception as e:
+        return json.dumps({"success": False, "error": str(e)}, indent=2)
+
+
+@tool
+def generate_privacy_posture_report(
+    actor: str = "Omnia.PrivacyOfficer"
+) -> str:
+    """Produces a complete privacy and data governance intelligence report with cryptographic seal."""
+    from privacy.service import privacy_service
+    import json
+    try:
+        report = privacy_service.generate_posture_report(actor=actor)
+        return json.dumps({
+            "success": True,
+            "report_id": report.report_id,
+            "overall_posture_score": report.overall_posture_score,
+            "total_assets": report.total_assets,
+            "total_classifications": report.total_classifications,
+            "pending_dsrs_count": report.pending_dsrs_count,
+            "active_holds_count": report.active_holds_count,
+            "high_risk_vendors_count": report.high_risk_vendors_count,
+            "cryptographic_seal": report.cryptographic_seal,
+            "summary_facts": report.summary_facts,
+            "estimates": report.estimates
+        }, indent=2)
+    except Exception as e:
+        return json.dumps({"success": False, "error": str(e)}, indent=2)
+
 OMNIA_ALL_TOOLS = [
     register_security_telemetry_source,
     ingest_and_evaluate_security_telemetry,
@@ -7749,6 +7977,12 @@ OMNIA_ALL_TOOLS = [
     extract_malware_indicators_and_behaviors,
     generate_defensive_detection_rules,
     generate_malware_intelligence_report,
+    inventory_and_classify_data_asset,
+    execute_sensitive_data_discovery,
+    record_data_processing_and_consent,
+    evaluate_retention_and_orchestrate_deletion,
+    manage_data_subject_request,
+    generate_privacy_posture_report,
 ]
 
 # Backward compatibility alias
